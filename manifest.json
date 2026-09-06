@@ -1,17 +1,16 @@
 {
-  "name": "Reparto de Nómina",
-  "short_name": "Reparto",
-  "description": "Reparte cada nómina entre tus cuentas y huchas, con gasto rápido y criba de fin de mes.",
+  "name": "Finanzas",
+  "short_name": "Finanzas",
+  "description": "Gestión personal de nómina, distribución de gastos y huchas de ahorro.",
   "start_url": "./index.html",
   "scope": "./",
   "display": "standalone",
-  "orientation": "portrait-primary",
-  "background_color": "#F2F2F7",
-  "theme_color": "#6742F0",
-  "lang": "es",
+  "orientation": "portrait",
+  "background_color": "#0B0C10",
+  "theme_color": "#0B0C10",
   "icons": [
-    { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
-    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
-    { "src": "icons/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+    { "src": "icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "maskable" }
   ]
 }
