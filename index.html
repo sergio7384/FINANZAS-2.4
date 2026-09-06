@@ -6,7 +6,7 @@
 <title>Reparto de Nómina</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,600;12..96,700;12..96,800&family=Figtree:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:opsz,wght@14..32,400;14..32,500;14..32,600;14..32,700;14..32,800&display=swap">
 <style>
 /* ============================================================
    TOKENS — tema claro en :root, oscuro redefinido dos veces
@@ -48,14 +48,17 @@
   --c-ahorro:    #17A673;
 
   --shadow-1: 0 1px 2px rgba(16,18,28,.05), 0 1px 1px rgba(16,18,28,.04);
-  --shadow-2: 0 8px 26px -10px rgba(16,18,28,.22), 0 2px 6px rgba(16,18,28,.05);
+  --shadow-2: 0 10px 30px -12px rgba(16,18,28,.20), 0 2px 8px rgba(16,18,28,.05);
   --shadow-3: 0 26px 60px -18px rgba(16,18,28,.34);
 
-  --r-s: 10px; --r-m: 14px; --r-l: 20px; --r-xl: 26px;
+  --r-s: 12px; --r-m: 16px; --r-l: 22px; --r-xl: 30px;
 
-  --font-display: "Bricolage Grotesque", "Trebuchet MS", system-ui, sans-serif;
-  --font-ui: "Figtree", system-ui, -apple-system, "Segoe UI", sans-serif;
-  --font-mono: "JetBrains Mono", ui-monospace, "Cascadia Mono", Consolas, monospace;
+  /* Una sola familia en todo pesos — como el sistema en iOS, nunca dos
+     tipografías distintas para "display" y "texto". Inter es el sustituto
+     web más fiel a SF Pro (misma altura de x, mismas proporciones). */
+  --font-display: "Inter", -apple-system, "SF Pro Display", system-ui, sans-serif;
+  --font-ui: "Inter", -apple-system, "SF Pro Text", system-ui, sans-serif;
+  --font-mono: "Inter", -apple-system, system-ui, sans-serif;
 
   --rail-w: 244px;
   --wrap: 1180px;
@@ -149,8 +152,8 @@ body{
   background: var(--bg);
   color: var(--ink);
   font-family: var(--font-ui);
-  font-size: 15px;
-  line-height: 1.5;
+  font-size: 15.5px;
+  line-height: 1.45;
   -webkit-font-smoothing: antialiased;
   -webkit-text-size-adjust: 100%;
   overflow-x: hidden;
@@ -229,7 +232,7 @@ ul,ol{ margin:0; padding:0; list-style:none; }
   border-bottom:1px solid var(--line-soft);
 }
 .topbar__in{ max-width:var(--wrap); margin:0 auto; padding:12px 28px; display:flex; align-items:center; gap:14px; }
-.topbar__title{ font-family:var(--font-display); font-size:19px; font-weight:700; letter-spacing:-.02em; }
+.topbar__title{ font-family:var(--font-display); font-size:19px; font-weight:600; letter-spacing:-.02em; }
 .topbar__spacer{ flex:1; }
 
 /* selector de mes */
@@ -248,42 +251,41 @@ ul,ol{ margin:0; padding:0; list-style:none; }
   border:1px solid transparent; min-height:38px;
   transition: background .14s ease, border-color .14s ease, transform .1s ease, opacity .14s;
 }
-.btn:active{ transform:translateY(1px); }
-.btn:disabled{ opacity:.42; cursor:not-allowed; transform:none; }
+/* iOS no tiene :hover (todo es táctil): la única reacción a un toque es un
+   ligero atenuado, nunca un desplazamiento ni un cambio de sombra. */
+.btn:active{ opacity:.62; }
+.btn:disabled{ opacity:.38; cursor:not-allowed; }
 .btn--primary{ background:var(--accent); color:var(--accent-ink); }
-.btn--primary:hover:not(:disabled){ background: color-mix(in srgb, var(--accent) 88%, var(--ink)); }
-.btn--ghost{ background:var(--surface); border-color:var(--line); color:var(--ink); box-shadow:var(--shadow-1); }
-.btn--ghost:hover:not(:disabled){ background:var(--surface-2); border-color:var(--ink-3); }
-.btn--quiet{ background:transparent; color:var(--ink-2); }
-.btn--quiet:hover:not(:disabled){ background:var(--surface-3); color:var(--ink); }
+.btn--ghost{ background:var(--surface-3); border-color:transparent; color:var(--ink); }
+.btn--quiet{ background:transparent; color:var(--accent); }
 .btn--danger{ background:var(--neg-soft); color:var(--neg); border-color:transparent; }
-.btn--danger:hover:not(:disabled){ background:var(--neg); color:#fff; }
 .btn--wide{ width:100%; }
-.btn--lg{ min-height:48px; font-size:15.5px; padding:12px 20px; border-radius:var(--r-m); }
-.btn--sm{ min-height:30px; padding:5px 11px; font-size:13px; border-radius:8px; }
+.btn--lg{ min-height:50px; font-size:16px; padding:12px 20px; border-radius:var(--r-m); }
+.btn--sm{ min-height:30px; padding:5px 11px; font-size:13px; border-radius:9px; }
 .btn .ic{ color:currentColor; }
 
-.iconbtn{ width:36px; height:36px; border-radius:var(--r-s); display:grid; place-items:center; color:var(--ink-2); border:1px solid transparent; }
-.iconbtn:hover{ background:var(--surface-3); color:var(--ink); }
-.iconbtn--bordered{ background:var(--surface); border-color:var(--line); box-shadow:var(--shadow-1); }
+.iconbtn{ width:36px; height:36px; border-radius:50%; display:grid; place-items:center; color:var(--ink-2); border:1px solid transparent; }
+.iconbtn:active{ opacity:.5; background:var(--surface-3); }
+.iconbtn--bordered{ background:var(--surface-3); border-color:transparent; color:var(--accent); }
 
 /* ============================================================
-   TARJETAS Y REJILLA
+   TARJETAS Y REJILLA — grupos planos, como una tabla agrupada de iOS:
+   sin borde ni sombra, solo el contraste de fondo contra la página.
    ============================================================ */
-.grid{ display:grid; grid-template-columns:repeat(12,1fr); gap:16px; }
+.grid{ display:grid; grid-template-columns:repeat(12,1fr); gap:14px; }
 .col-3{ grid-column:span 3 } .col-4{ grid-column:span 4 } .col-5{ grid-column:span 5 }
 .col-6{ grid-column:span 6 } .col-7{ grid-column:span 7 } .col-8{ grid-column:span 8 }
 .col-9{ grid-column:span 9 } .col-12{ grid-column:span 12 }
 
 .card{
-  background:var(--surface); border:1px solid var(--line); border-radius:var(--r-m);
-  padding:18px; box-shadow:var(--shadow-1); min-width:0;
+  background:var(--surface); border:none; border-radius:var(--r-l);
+  padding:18px; box-shadow:none; min-width:0;
   display:flex; flex-direction:column; gap:14px;
 }
 .card--pad0{ padding:0; overflow:hidden; }
-.card--flat{ box-shadow:none; background:var(--surface-2); }
+.card--flat{ background:var(--surface-2); }
 .card__head{ display:flex; align-items:flex-start; gap:12px; }
-.card__title{ font-family:var(--font-display); font-size:15.5px; font-weight:700; letter-spacing:-.01em; }
+.card__title{ font-family:var(--font-display); font-size:16px; font-weight:600; letter-spacing:-.01em; }
 .card__sub{ font-size:12.5px; color:var(--ink-3); margin-top:1px; }
 .card__act{ margin-left:auto; display:flex; gap:6px; align-items:center; }
 
@@ -335,17 +337,17 @@ ul,ol{ margin:0; padding:0; list-style:none; }
    ============================================================ */
 .rows{ display:flex; flex-direction:column; }
 .row{
-  display:flex; align-items:center; gap:12px; padding:11px 4px;
+  display:flex; align-items:center; gap:12px; padding:12px 4px; min-height:44px;
   border-bottom:1px solid var(--line-soft); min-width:0;
 }
 .row:last-child{ border-bottom:0; }
-.row--btn{ width:100%; text-align:left; border-radius:8px; padding:11px 8px; }
-.row--btn:hover{ background:var(--surface-2); }
+.row--btn{ width:100%; text-align:left; border-radius:10px; padding:12px 8px; }
+.row--btn:active{ background:var(--surface-3); }
 .row__ic{ width:34px; height:34px; border-radius:10px; display:grid; place-items:center; flex:none; font-size:16px; background:var(--surface-3); }
 .row__body{ flex:1; min-width:0; }
-.row__t{ font-size:14px; font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-.row__s{ font-size:12px; color:var(--ink-3); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-.row__v{ font-family:var(--font-mono); font-size:13.5px; font-weight:500; font-variant-numeric:tabular-nums; text-align:right; white-space:nowrap; }
+.row__t{ font-size:15.5px; font-weight:500; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.row__s{ font-size:13px; color:var(--ink-3); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.row__v{ font-family:var(--font-ui); font-size:15.5px; font-weight:400; font-variant-numeric:tabular-nums; text-align:right; white-space:nowrap; color:var(--ink-2); }
 .row__v--neg{ color:var(--neg); }
 .row__v--pos{ color:var(--pos); }
 
@@ -503,10 +505,9 @@ ul,ol{ margin:0; padding:0; list-style:none; }
 .kv--total .kv__v{ font-size:15px; }
 
 /* huchas */
-.hucha{ display:flex; flex-direction:column; gap:12px; padding:16px; border:1px solid var(--line); border-radius:var(--r-m); background:var(--surface); box-shadow:var(--shadow-1); position:relative; overflow:hidden; }
-.hucha::before{ content:""; position:absolute; left:0; top:0; bottom:0; width:3px; background:var(--hue, var(--accent)); }
+.hucha{ display:flex; flex-direction:column; gap:12px; padding:16px; border:none; border-radius:var(--r-l); background:var(--surface); box-shadow:none; position:relative; overflow:hidden; }
 .hucha__top{ display:flex; align-items:flex-start; gap:11px; }
-.hucha__e{ width:38px; height:38px; border-radius:11px; display:grid; place-items:center; font-size:19px; background:color-mix(in srgb, var(--hue, var(--accent)) 14%, transparent); flex:none; }
+.hucha__e{ width:40px; height:40px; border-radius:13px; display:grid; place-items:center; font-size:19px; background:color-mix(in srgb, var(--hue, var(--accent)) 14%, transparent); flex:none; }
 .hucha__n{ font-size:14.5px; font-weight:700; }
 .hucha__m{ font-size:11.5px; color:var(--ink-3); }
 .hucha__s{ font-family:var(--font-display); font-weight:700; font-size:1.55rem; letter-spacing:-.03em; font-variant-numeric:tabular-nums; }
@@ -530,13 +531,21 @@ ul,ol{ margin:0; padding:0; list-style:none; }
 }
 @media (max-width: 900px){
   .rail{ display:none; }
-  .wrap{ padding:18px 16px 150px; }
-  .topbar__in{ padding:10px 16px; }
+  .wrap{ padding:6px 16px 150px; }
   .grid{ gap:12px; }
   .col-3,.col-4,.col-6{ grid-column:span 12 }
-  .hero{ padding:18px; border-radius:var(--r-m); }
+  .hero{ padding:20px; border-radius:var(--r-l); }
   .hero__side{ gap:20px; }
   .tblwrap{ margin:0 -18px; padding:0 18px; }
+
+  /* Título grande, como el "large title" de iOS: mismo hueco que antes,
+     pero mucho más grande y sin la barra con borde y desenfoque. El
+     selector de mes se queda arriba y accesible (no como una barra
+     de navegación clásica de página web). */
+  .topbar{ background:var(--bg); backdrop-filter:none; border-bottom:none; }
+  .topbar__in{ padding:14px 16px 8px; align-items:flex-end; }
+  .topbar__title{ font-size:30px; font-weight:700; letter-spacing:-.03em; }
+  .monthpick{ background:var(--surface-3); box-shadow:none; }
 
   .tabbar{
     display:flex; position:fixed; left:0; right:0; bottom:0; z-index:50;
