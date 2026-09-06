@@ -1118,7 +1118,7 @@ function cfgDefault() {
     reparto:      { fijos: 35, ocio: 30, ahorro: 35 },
     repartoOcio:  { ocioLibre: 42.5, coche: 25.2, caprichos: 32.3 },
     cribaAuto: true,
-    cribaReparto: { coche: 25.2, caprichos: 32.3 },
+    cribaReparto: { coche: 14.5, caprichos: 18.5, ahorro: 67.0 },
     defaults: { aporteCasa: 0, cuentaConjunta: 0 },
     retencionPct: 19,
     tema: 'auto',
@@ -1407,17 +1407,22 @@ function calcularCriba(key, repartoManual) {
   const total = sobranteFijos + sobranteOcio;
 
   const cfg = cfgDeMes(doc);
-  const destinos = ['coche', 'caprichos']
+  const destinos = ['coche', 'caprichos', 'ahorro']
     .map(pid => huchaDePartida(pid))
     .filter(Boolean);
+
+  // Peso automático de cada hucha: su parte proporcional dentro del RESTANTE
+  // (no solo dentro del ocio), para que ahorro (35% entero) y coche/caprichos
+  // (una fracción del 30% de ocio) se comparen en la misma base.
+  const pesoAuto = pid => pid === 'ahorro'
+    ? (cfg.reparto.ahorro || 0)
+    : (cfg.repartoOcio[pid] || 0) * (cfg.reparto.ocio || 0) / 100;
 
   let reparto = {};
   if (repartoManual) {
     reparto = repartoManual;
   } else if (destinos.length && total > 0) {
-    const pesos = destinos.map(h => cfg.cribaAuto
-      ? (cfg.repartoOcio[h.partida] || 1)
-      : (cfg.cribaReparto[h.partida] || 1));
+    const pesos = destinos.map(h => cfg.cribaAuto ? pesoAuto(h.partida) : (cfg.cribaReparto[h.partida] || 1));
     const partes = repartir(total, pesos);
     destinos.forEach((h, i) => { reparto[h.id] = partes[i]; });
   }
@@ -1457,25 +1462,12 @@ function vistaResumen() {
   const hayNominas = mesesOrdenados().some(k => (S.meses[k].sueldo || 0) > 0);
   if (!hayNominas && !movsDe(key).length) return vistaBienvenida();
 
-  const rep = repartoDe(doc);
   const sal = saldosHuchas();
   const total = sum(Object.values(sal).map(o => o.saldo));
   const presus = presupuestos(key);
-  const cuentas = porCuenta(rep);
   const criba = calcularCriba(key);
   const listaH = huchas();
-
-  const estePeriodo = sum(listaH.map(h => {
-    const d = S.meses[key];
-    let v = 0;
-    if (d && d.estado !== 'borrador' && d.asignacion && h.partida) v += d.asignacion[h.partida] || 0;
-    if (d && d.criba && d.criba.aplicada && d.criba.reparto) v += d.criba.reparto[h.id] || 0;
-    if (d && d.intereses && d.intereses[h.id]) v += d.intereses[h.id].neto || 0;
-    return v;
-  }));
-
-  const movs = movsDe(key).slice(0, 7);
-  const gastadoMes = sum(movsDe(key).map(m => m.importe || 0));
+  const movs = movsDe(key).slice(0, 5);
 
   const segs = listaH.map(h => ({ nombre: h.nombre, valor: Math.max(0, sal[h.id] ? sal[h.id].saldo : 0), color: P(h.partida).color }));
 
@@ -1486,45 +1478,10 @@ function vistaResumen() {
       <div class="hero__main">
         <div class="label">Total en huchas</div>
         <div class="hero__amount">${eur(total)}</div>
-        <div class="hero__meta">
-          <span>${estadoPill(doc)}</span>
-          ${estePeriodo ? `<span style="color:var(--pos);font-weight:600">${eur(estePeriodo, { signo: true })} en ${mesLabel(key, true)}</span>` : `<span>Sin aportes registrados en ${mesLabel(key, true)}</span>`}
-        </div>
+        <div class="hero__meta"><span>${estadoPill(doc)}</span></div>
         <div style="margin-top:14px">${segbar(segs, 'segbar--tall')}</div>
       </div>
-      <div class="hero__side">
-        <div class="stat">
-          <div class="label">Nómina</div>
-          <div class="stat__v">${eur(rep.sueldo, { entero: true })}</div>
-          <div class="stat__d">${mesLabel(key)}</div>
-        </div>
-        <div class="stat">
-          <div class="label">Gastado</div>
-          <div class="stat__v">${eur(gastadoMes, { entero: true })}</div>
-          <div class="stat__d">${movsDe(key).length} movimiento${movsDe(key).length === 1 ? '' : 's'}</div>
-        </div>
-      </div>
     </section>
-
-    ${presus.map(p => {
-      const tono = tonoDisponible(p.disponible, p.asignado);
-      const usado = p.asignado > 0 ? clamp(p.gastado / p.asignado, 0, 1) : 0;
-      return `<section class="card col-6">
-        <div class="card__head">
-          <div class="row__ic" style="background:color-mix(in srgb, ${p.color} 16%, transparent)">${p.emoji}</div>
-          <div>
-            <div class="card__title">${p.nombre}</div>
-            <div class="card__sub">${eur(p.gastado)} de ${eur(p.asignado)}</div>
-          </div>
-          <div class="card__act"><span class="pill pill--${tono}">${p.disponible < 0 ? 'Te has pasado' : nfPc.format((1 - usado) * 100) + '% libre'}</span></div>
-        </div>
-        <div>
-          <div style="font-family:var(--font-display);font-weight:700;font-size:1.75rem;letter-spacing:-.03em;font-variant-numeric:tabular-nums;color:${p.disponible < 0 ? 'var(--neg)' : 'var(--ink)'}">${eur(p.disponible)}</div>
-          <div class="stat__d">${p.disponible < 0 ? 'de más sobre el presupuesto' : 'disponibles hasta fin de mes'}</div>
-        </div>
-        <div class="prog"><div class="prog__f" style="width:${(usado * 100).toFixed(1)}%;background:${p.disponible < 0 ? 'var(--neg)' : p.color}"></div></div>
-      </section>`;
-    }).join('')}
 
     ${criba.aplicable && doc.estado === 'confirmada' && !(doc.criba && doc.criba.aplicada) ? `
     <section class="card col-12" style="border-color:var(--accent-line);background:linear-gradient(100deg,var(--accent-soft),transparent 62%)">
@@ -1532,9 +1489,9 @@ function vistaResumen() {
         <div class="row__ic" style="background:var(--accent-soft);color:var(--accent)">${ic('sift')}</div>
         <div>
           <div class="card__title">Sobran ${eur(criba.total)} este mes</div>
-          <div class="card__sub">${eur(criba.sobranteFijos)} de gastos fijos · ${eur(criba.sobranteOcio)} de ocio libre</div>
+          <div class="card__sub">Repártelo entre tus huchas</div>
         </div>
-        <div class="card__act"><button class="btn btn--primary" data-act="abrirCriba">Repartir a huchas</button></div>
+        <div class="card__act"><button class="btn btn--primary" data-act="abrirCriba">Repartir</button></div>
       </div>
     </section>` : ''}
 
@@ -1550,41 +1507,29 @@ function vistaResumen() {
       </div>
     </section>` : ''}
 
-    <section class="card col-7">
-      <div class="card__head">
-        <div><div class="card__title">Reparto de ${mesLabel(key)}</div>
-        <div class="card__sub">${rep.restante < 0 ? 'El sueldo no cubre casa y cuenta conjunta' : `Sobre ${eur(rep.restante)} tras casa y conjunta`}</div></div>
-        <div class="card__act"><button class="btn btn--ghost btn--sm" data-act="ir" data-v="nomina">${ic('edit')}Editar</button></div>
-      </div>
-      <div style="display:flex;gap:20px;align-items:center;flex-wrap:wrap">
-        ${donut(ORDEN_PARTIDAS.map(pid => ({ nombre: P(pid).nombre, valor: rep[pid] || 0, color: P(pid).color })), eur(rep.sueldo, { entero: true }), 'nómina')}
-        <div style="flex:1;min-width:210px">
-          ${leyenda(ORDEN_PARTIDAS.map(pid => ({ nombre: P(pid).nombre, valor: rep[pid] || 0, color: P(pid).color })), rep.sueldo)}
-        </div>
-      </div>
-    </section>
-
-    <section class="card col-5">
-      <div class="card__head"><div><div class="card__title">A dónde va</div>
-        <div class="card__sub">Transferencias del mes</div></div></div>
-      <div class="rows">
-        ${Object.keys(CUENTAS).map(cid => {
-          const c = CUENTAS[cid], d = cuentas[cid] || { entra: 0, partidas: [] };
-          return `<div class="row">
-            <div class="row__ic" style="background:color-mix(in srgb, ${c.color} 16%, transparent);color:${c.color}">${ic('bank')}</div>
-            <div class="row__body">
-              <div class="row__t">${esc(c.nombre)}</div>
-              <div class="row__s">${d.partidas.filter(p => p.valor).map(p => P(p.pid).corto).join(' · ') || c.rol}</div>
+    <section class="card col-12">
+      <div class="card__head"><div><div class="card__title">Disponible este mes</div>
+        <div class="card__sub">Antes de la próxima nómina</div></div></div>
+      <div style="display:flex;flex-direction:column;gap:18px">
+        ${presus.map(p => {
+          const usado = p.asignado > 0 ? clamp(p.gastado / p.asignado, 0, 1) : 0;
+          return `<div>
+            <div style="display:flex;align-items:center;gap:12px">
+              <div class="row__ic" style="background:color-mix(in srgb, ${p.color} 16%, transparent);font-size:16px">${p.emoji}</div>
+              <div style="flex:1;min-width:0">
+                <div class="row__t">${p.nombre}</div>
+                <div class="row__s">${eur(p.gastado)} de ${eur(p.asignado)}</div>
+              </div>
+              <div style="font-family:var(--font-display);font-weight:700;font-size:1.3rem;letter-spacing:-.02em;font-variant-numeric:tabular-nums;color:${p.disponible < 0 ? 'var(--neg)' : 'var(--ink)'}">${eur(p.disponible)}</div>
             </div>
-            <div class="row__v">${eur(d.entra)}</div>
+            <div class="prog" style="margin-top:9px"><div class="prog__f" style="width:${(usado * 100).toFixed(1)}%;background:${p.disponible < 0 ? 'var(--neg)' : p.color}"></div></div>
           </div>`;
         }).join('')}
       </div>
     </section>
 
-    <section class="card col-5">
-      <div class="card__head"><div><div class="card__title">Huchas</div>
-        <div class="card__sub">${listaH.length} hucha${listaH.length === 1 ? '' : 's'}</div></div>
+    <section class="card col-6">
+      <div class="card__head"><div><div class="card__title">Huchas</div></div>
         <div class="card__act"><button class="btn btn--quiet btn--sm" data-act="ir" data-v="huchas">Ver todas</button></div></div>
       <div class="rows">
         ${listaH.map(h => {
@@ -1594,7 +1539,6 @@ function vistaResumen() {
             <div class="row__ic" style="background:color-mix(in srgb, ${col} 16%, transparent)">${esc(h.emoji)}</div>
             <div class="row__body">
               <div class="row__t">${esc(h.nombre)}</div>
-              <div class="row__s">${h.objetivo > 0 ? `${nfPc.format(clamp(o.saldo / h.objetivo, 0, 1) * 100)}% de ${eur(h.objetivo, { entero: true })}` : (CUENTAS[h.cuenta] || {}).nombre || ''}</div>
             </div>
             <div class="row__v">${eur(o.saldo)}</div>
           </button>`;
@@ -1602,19 +1546,17 @@ function vistaResumen() {
       </div>
     </section>
 
-    <section class="card col-7">
-      <div class="card__head"><div><div class="card__title">Últimos movimientos</div>
-        <div class="card__sub">${mesLabel(key)}</div></div>
+    <section class="card col-6">
+      <div class="card__head"><div><div class="card__title">Últimos movimientos</div></div>
         <div class="card__act"><button class="btn btn--ghost btn--sm" data-act="nuevoGasto">${ic('plus')}Añadir</button></div></div>
       <div class="rows">
         ${movs.length ? movs.map(m => filaMov(m)).join('') : `<div class="empty"><span class="empty__e">🧾</span>
           <span class="empty__t">Ningún gasto todavía</span>
-          <span class="empty__d">Usa el botón <strong>Gasto</strong> de abajo a la derecha para restar en dos toques.</span></div>`}
+          <span class="empty__d">Usa el botón <strong>Gasto</strong> de abajo a la derecha.</span></div>`}
       </div>
-      ${movsDe(key).length > 7 ? `<button class="btn btn--quiet btn--wide btn--sm" data-act="ir" data-v="cuentas">Ver los ${movsDe(key).length} movimientos</button>` : ''}
+      ${movsDe(key).length > 5 ? `<button class="btn btn--quiet btn--wide btn--sm" data-act="ir" data-v="cuentas">Ver los ${movsDe(key).length} movimientos</button>` : ''}
     </section>
 
-    ${grafEvolucion()}
   </div>`;
 }
 
@@ -1674,7 +1616,7 @@ function vistaBienvenida() {
     </section>
     <section class="card col-4">
       <div class="card__title">🪣 Criba de fin de mes</div>
-      <p class="note">Lo que sobra de gastos fijos y de ocio libre se reparte entre las huchas de coche y caprichos, en la misma proporción que tienen dentro del ocio. Previsualizas, ajustas y confirmas.</p>
+      <p class="note">Lo que sobra de gastos fijos y de ocio libre se reparte entre las huchas de ahorro, coche y caprichos. Previsualizas, ajustas y confirmas.</p>
     </section>
     <section class="card col-4">
       <div class="card__title">📈 Huchas remuneradas</div>
@@ -2092,13 +2034,18 @@ function vistaAjustes() {
       <label class="switch">
         <input type="checkbox" id="fCribaAuto" ${c.cribaAuto ? 'checked' : ''}>
         <span class="switch__t"></span>
-        <span style="font-size:13.5px">Usar la misma proporción coche : caprichos que dentro del ocio</span>
+        <span style="font-size:13.5px">Repartirlo en la misma proporción que ya reciben ahorro, coche y caprichos</span>
       </label>
-      <p class="note">Con ${nfPc.format(c.repartoOcio.coche)}% y ${nfPc.format(c.repartoOcio.caprichos)}%, el sobrante se parte
-        <strong>${nfPc.format(c.repartoOcio.coche / (c.repartoOcio.coche + c.repartoOcio.caprichos) * 100)}%</strong> al coche y
-        <strong>${nfPc.format(c.repartoOcio.caprichos / (c.repartoOcio.coche + c.repartoOcio.caprichos) * 100)}%</strong> a caprichos.</p>
-      ${!c.cribaAuto ? `<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
-        ${[['coche', 'Coche'], ['caprichos', 'Caprichos']].map(([k, n]) => `<div class="field">
+      ${(() => {
+        const pesos = { ahorro: c.reparto.ahorro, coche: c.repartoOcio.coche * c.reparto.ocio / 100, caprichos: c.repartoOcio.caprichos * c.reparto.ocio / 100 };
+        const tot = pesos.ahorro + pesos.coche + pesos.caprichos;
+        return `<p class="note">Hoy eso reparte el sobrante
+          <strong>${nfPc.format(pesos.ahorro / tot * 100)}%</strong> a ahorro,
+          <strong>${nfPc.format(pesos.coche / tot * 100)}%</strong> a coche y
+          <strong>${nfPc.format(pesos.caprichos / tot * 100)}%</strong> a caprichos.</p>`;
+      })()}
+      ${!c.cribaAuto ? `<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px">
+        ${[['ahorro', 'Ahorro'], ['coche', 'Coche'], ['caprichos', 'Caprichos']].map(([k, n]) => `<div class="field">
           <label class="field__l" for="cb-${k}">${P(k).emoji} ${n}</label>
           <div class="inputgrp"><input class="input input--money" id="cb-${k}" data-pc="cribaReparto.${k}" inputmode="decimal" value="${nfPc.format(c.cribaReparto[k])}"><span class="inputgrp__suf">%</span></div>
         </div>`).join('')}
@@ -2416,7 +2363,7 @@ function borrarMov(id, key, silencioso) {
 function abrirCriba() {
   const key = S.mesSel;
   const prev = calcularCriba(key);
-  if (!prev.destinos.length) { toast('No hay huchas de coche ni de caprichos donde repartir.', { tono: 'neg' }); return; }
+  if (!prev.destinos.length) { toast('No hay ninguna hucha de ahorro, coche o caprichos donde repartir.', { tono: 'neg' }); return; }
   let reparto = Object.assign({}, prev.reparto);
 
   const m = modal(`<div id="cribaBody"></div>`, { titulo: 'Criba de fin de mes', ancho: true });
@@ -2456,8 +2403,7 @@ function abrirCriba() {
       </div>
       ${desvio !== 0 ? `<div class="pill pill--${desvio > 0 ? 'warn' : 'neg'}" style="align-self:flex-start">
         ${desvio > 0 ? `Quedan ${eur(desvio)} sin asignar` : `Te pasas ${eur(-desvio)} de lo que ha sobrado`}</div>` : ''}
-      <p class="note">Por defecto se reparte en la misma proporción que coche y caprichos tienen dentro del ocio
-        (${nfPc.format(cfgDeMes(S.meses[key]).repartoOcio.coche / (cfgDeMes(S.meses[key]).repartoOcio.coche + cfgDeMes(S.meses[key]).repartoOcio.caprichos) * 100)}% / ${nfPc.format(cfgDeMes(S.meses[key]).repartoOcio.caprichos / (cfgDeMes(S.meses[key]).repartoOcio.coche + cfgDeMes(S.meses[key]).repartoOcio.caprichos) * 100)}%). Puedes cambiar los importes a mano.</p>
+      <p class="note">Por defecto se reparte en la misma proporción que ahorro, coche y caprichos ya reciben de tu nómina. Puedes cambiar los importes a mano.</p>
       `}
 
       <div class="sheet__foot">
@@ -2543,7 +2489,7 @@ function abrirCierre() {
       ${prev.total > 0 ? `
         <label class="switch" style="margin-bottom:8px">
           <input type="checkbox" id="cCriba" checked><span class="switch__t"></span>
-          <span style="font-size:13.5px">Repartir ${eur(prev.total)} entre coche y caprichos</span></label>
+          <span style="font-size:13.5px">Repartir ${eur(prev.total)} entre tus huchas</span></label>
         <div class="rows">${prev.destinos.map(h => `<div class="row" style="padding:6px 2px">
           <span class="dot" style="background:${P(h.partida).color}"></span>
           <div class="row__body"><div class="row__t" style="font-size:13.5px;font-weight:500">${esc(h.emoji)} ${esc(h.nombre)}</div></div>
