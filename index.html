@@ -551,16 +551,39 @@ function paintAccountBtn(user){
     ? `<img src="${user.photoURL}" referrerpolicy="no-referrer" alt="">`
     : `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="8" r="3.6"/><path d="M4.5 20c1.6-4 5-6 7.5-6s5.9 2 7.5 6"/></svg>`;
 }
-document.getElementById('googleSignInBtn').addEventListener('click', ()=>{
-  document.getElementById('googleSignInBtn').setAttribute('disabled','');
-  document.getElementById('authGateErr').textContent = '';
+document.getElementById('googleSignInBtn').addEventListener('click', async ()=>{
+  const btn = document.getElementById('googleSignInBtn');
+  const err = document.getElementById('authGateErr');
+  btn.setAttribute('disabled','');
+  err.textContent = '';
   const provider = new firebase.auth.GoogleAuthProvider();
-  // signInWithRedirect (no popup): la única forma fiable de iniciar sesión
-  // con Google desde una PWA instalada en pantalla de inicio en iOS.
-  auth.signInWithRedirect(provider).catch(e=>{
-    document.getElementById('googleSignInBtn').removeAttribute('disabled');
-    document.getElementById('authGateErr').textContent = 'No se pudo abrir el inicio de sesión (' + e.code + ').';
-  });
+
+  // Ventana emergente primero. signInWithRedirect ya no funciona solo en
+  // Chrome/Safari modernos cuando authDomain está en otro dominio
+  // (firebaseapp.com): el navegador aísla el almacenamiento entre sitios y
+  // la sesión se pierde al volver. El popup no tiene ese problema porque
+  // habla con la página por postMessage.
+  try{
+    await auth.signInWithPopup(provider);
+    return; // onAuthStateChanged se encarga del resto
+  }catch(e){
+    // Si el navegador bloquea el popup (o no lo admite, como algunas PWA
+    // instaladas), se intenta la redirección como plan B.
+    const recuperable = ['auth/popup-blocked','auth/operation-not-supported-in-this-environment','auth/cancelled-popup-request'];
+    if(recuperable.includes(e.code)){
+      try{
+        await auth.signInWithRedirect(provider);
+        return;
+      }catch(e2){
+        btn.removeAttribute('disabled');
+        err.textContent = 'No se pudo iniciar sesión (' + e2.code + ').';
+        return;
+      }
+    }
+    btn.removeAttribute('disabled');
+    if(e.code === 'auth/popup-closed-by-user') return; // cerró la ventana, sin drama
+    err.textContent = 'No se pudo iniciar sesión (' + e.code + ').';
+  }
 });
 document.getElementById('accountBtn').addEventListener('click', ()=>{
   const cuenta = (currentUser && currentUser.email) || 'esta cuenta';
