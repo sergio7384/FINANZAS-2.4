@@ -361,6 +361,8 @@
   }
   .auth-submit:active{ transform:scale(0.97); filter:brightness(0.92); }
   .auth-submit[disabled]{ opacity:0.55; pointer-events:none; }
+  .auth-link{ background:none; border:0; color:var(--text-dim); font-size:13px; font-weight:600; padding:6px; font-family:inherit; }
+  .auth-link:active{ opacity:0.6; }
   .auth-sep{ display:flex; align-items:center; gap:12px; width:100%; max-width:320px; color:var(--text-faint); font-size:12px; }
   .auth-sep::before, .auth-sep::after{ content:''; flex:1; height:1px; background:var(--border); }
 
@@ -396,6 +398,7 @@
     <input class="auth-input" id="authPass" type="password" autocomplete="current-password"
            placeholder="Tu contraseña" minlength="6" required>
     <button class="auth-submit" id="authSubmit" type="submit">Entrar</button>
+    <button class="auth-link" id="authCreate" type="button">Es mi primera vez: crear cuenta</button>
   </form>
   <div class="auth-gate__err" id="authGateErr"></div>
 
@@ -578,37 +581,41 @@ function paintAccountBtn(user){
 /* Correo + contraseña: el método más fiable en iOS, porque no depende de
    ventanas emergentes, ni de redirecciones, ni de cookies entre dominios.
    La primera vez crea la cuenta; a partir de ahí, entra. */
-document.getElementById('authForm').addEventListener('submit', async ev=>{
-  ev.preventDefault();
+function textoErrorAuth(code){
+  switch(code){
+    case 'auth/invalid-credential':
+    case 'auth/wrong-password':      return 'Correo o contraseña incorrectos.';
+    case 'auth/user-not-found':      return 'No existe esa cuenta. Si es tu primera vez, pulsa "crear cuenta".';
+    case 'auth/invalid-email':       return 'Ese correo no es válido.';
+    case 'auth/email-already-in-use':return 'Esa cuenta ya existe: entra con tu contraseña.';
+    case 'auth/weak-password':       return 'La contraseña debe tener al menos 6 caracteres.';
+    case 'auth/too-many-requests':   return 'Demasiados intentos. Espera un momento.';
+    case 'auth/network-request-failed': return 'Sin conexión.';
+    default: return 'No se pudo entrar (' + code + ').';
+  }
+}
+async function intentarAuth(crear){
   const btn = document.getElementById('authSubmit');
   const err = document.getElementById('authGateErr');
   const email = document.getElementById('authEmail').value.trim();
   const pass = document.getElementById('authPass').value;
+  if(!email || pass.length < 6){
+    err.textContent = 'Escribe tu correo y una contraseña de al menos 6 caracteres.';
+    return;
+  }
   btn.setAttribute('disabled',''); err.textContent = '';
   try{
-    await auth.signInWithEmailAndPassword(email, pass);
+    // Nunca se crea cuenta sin pedirlo: así una errata en el correo avisa
+    // en vez de dejarte dentro de una cuenta nueva y vacía.
+    if(crear) await auth.createUserWithEmailAndPassword(email, pass);
+    else      await auth.signInWithEmailAndPassword(email, pass);
   }catch(e){
-    if(e.code === 'auth/user-not-found' || e.code === 'auth/invalid-credential'){
-      // Puede que la cuenta no exista todavía: se intenta crearla.
-      try{
-        await auth.createUserWithEmailAndPassword(email, pass);
-        return;
-      }catch(e2){
-        btn.removeAttribute('disabled');
-        err.textContent = e2.code === 'auth/email-already-in-use'
-          ? 'Esa cuenta ya existe pero la contraseña no coincide.'
-          : e2.code === 'auth/weak-password'
-            ? 'La contraseña debe tener al menos 6 caracteres.'
-            : 'No se pudo entrar (' + e2.code + ').';
-        return;
-      }
-    }
     btn.removeAttribute('disabled');
-    err.textContent = e.code === 'auth/wrong-password' ? 'Contraseña incorrecta.'
-      : e.code === 'auth/invalid-email' ? 'Ese correo no es válido.'
-      : 'No se pudo entrar (' + e.code + ').';
+    err.textContent = textoErrorAuth(e.code);
   }
-});
+}
+document.getElementById('authForm').addEventListener('submit', ev=>{ ev.preventDefault(); intentarAuth(false); });
+document.getElementById('authCreate').addEventListener('click', ()=> intentarAuth(true));
 
 document.getElementById('googleSignInBtn').addEventListener('click', async ()=>{
   const btn = document.getElementById('googleSignInBtn');
