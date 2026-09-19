@@ -342,6 +342,18 @@
   .streak.hidden{ display:none; }
   @keyframes streakIn{ from{ opacity:0; transform:scale(0.8) translateY(-4px);} to{ opacity:1; transform:scale(1) translateY(0);} }
 
+  /* cabecera de Huchas: a la izquierda las tuyas, a la derecha la conjunta */
+  .hucha-split{ display:flex; align-items:stretch; border-radius:20px; padding:15px 8px; }
+  .hucha-half{ flex:1; display:flex; flex-direction:column; align-items:center; gap:4px; text-align:center; }
+  .hucha-half__label{ font-size:10.5px; font-weight:700; letter-spacing:0.06em; color:var(--text-dim); text-transform:uppercase; }
+  .hucha-half__value{ font-size:22px; font-weight:800; letter-spacing:-0.015em; font-variant-numeric:tabular-nums; }
+  /* La mitad de la conjunta se pulsa para editarla ahi mismo. */
+  .hucha-half.tappable{ border:0; background:transparent; font-family:inherit; border-radius:14px; padding:2px 4px;
+    transition:transform 200ms var(--spring), background 200ms; }
+  .hucha-half.tappable:active{ transform:scale(0.94); background:rgba(255,255,255,0.07); }
+  .hucha-half__hint{ font-size:9.5px; font-weight:600; color:var(--text-faint); letter-spacing:0.02em; }
+  .hucha-split__divider{ width:1px; align-self:stretch; background:var(--glass-border-soft); margin:2px 6px; }
+
   /* progress bars for huchas */
   .bucket-bar{ height:9px; border-radius:5px; background:rgba(255,255,255,0.08); overflow:hidden; margin-top:8px; }
   .bucket-bar > div{ height:100%; border-radius:5px; transition:width 700ms var(--spring); }
@@ -511,7 +523,7 @@
    a las diez, la décima sube sola (2.49 -> 2.5). Tiene que coincidir con
    la de package.json y con la del nombre de caché de sw.js: hay un
    comprobador en scripts/check-version.mjs que lo verifica. */
-const APP_VERSION = '2.5';
+const APP_VERSION = '2.51';
 
 /* ============ ICONS ============ */
 const ICONS = {
@@ -1248,19 +1260,49 @@ function goalETA(key, cur, meta){
   return { monthsLeft, when };
 }
 
+/* La conjunta no es dinero solo tuyo, asi que en esta pestaña vive aparte:
+   ocupa la derecha de la cabecera y no tiene tarjeta propia. */
+const CONJUNTA_KEY = 'conjunta';
+const MIS_BUCKETS = BUCKETS.filter(b=> b.key !== CONJUNTA_KEY);
+
 function renderHuchas(){
   const el = document.getElementById('view-huchas');
-  const max = Math.max(1, ...BUCKETS.map(b=>state.huchas[b.key]));
-  const totalHuchas = BUCKETS.reduce((s,b)=> s + state.huchas[b.key], 0);
+  const max = Math.max(1, ...MIS_BUCKETS.map(b=>state.huchas[b.key]));
+  const totalMias = MIS_BUCKETS.reduce((s,b)=> s + state.huchas[b.key], 0);
+  const conjunta = BUCKETS.find(b=> b.key === CONJUNTA_KEY);
+  const saldoConjunta = state.huchas[CONJUNTA_KEY] || 0;
+  const metaConjunta = state.metas[CONJUNTA_KEY] || 0;
+  const editandoConjunta = editingBucket === CONJUNTA_KEY;
 
-  const totalCard = `
-    <div class="card" style="text-align:center;">
-      <div class="card-head" style="justify-content:center;"><span>Total en huchas</span></div>
-      <div class="amount" style="font-size:36px; font-weight:800;">${fmt(totalHuchas)}</div>
+  const cabecera = `
+    <div class="card" style="padding-top:14px;">
+      <div class="hucha-split">
+        <div class="hucha-half">
+          <div class="hucha-half__label">Tus huchas</div>
+          <div class="hucha-half__value">${fmt(totalMias)}</div>
+        </div>
+        <div class="hucha-split__divider"></div>
+        <button type="button" class="hucha-half tappable" id="conjuntaTap" aria-label="Editar la hucha conjunta">
+          <div class="hucha-half__label">Conjunta</div>
+          <div class="hucha-half__value" style="color:${conjunta.color}">${fmt(saldoConjunta)}</div>
+          <div class="hucha-half__hint">${editandoConjunta ? 'cerrar' : 'tocar para editar'}</div>
+        </button>
+      </div>
+      ${editandoConjunta ? `
+        <div class="edit-field" style="margin-top:12px;">
+          <div class="label">Saldo conjunta</div>
+          <input inputmode="decimal" id="bal-input-${CONJUNTA_KEY}" value="${saldoConjunta}">
+        </div>
+        <div class="edit-field">
+          <div class="label">Meta (0 = sin meta)</div>
+          <input inputmode="decimal" id="meta-input-${CONJUNTA_KEY}" value="${metaConjunta || ''}" placeholder="0,00">
+        </div>
+        <button class="btn" style="margin-top:10px;" data-save="${CONJUNTA_KEY}">${ICONS.check}Guardar</button>
+      ` : ''}
     </div>
   `;
 
-  el.innerHTML = totalCard + BUCKETS.map(b=>{
+  el.innerHTML = cabecera + MIS_BUCKETS.map(b=>{
     const cur = state.huchas[b.key];
     const meta = state.metas[b.key] || 0;
     const editing = editingBucket === b.key;
@@ -1304,7 +1346,7 @@ function renderHuchas(){
   `}).join('');
 
   // celebra con confeti la primera vez que una hucha alcanza su meta
-  BUCKETS.forEach(b=>{
+  MIS_BUCKETS.forEach(b=>{
     const meta = state.metas[b.key] || 0;
     const reached = meta > 0 && state.huchas[b.key] >= meta;
     if(reached && !celebratedGoals.has(b.key)){
@@ -1323,6 +1365,14 @@ function renderHuchas(){
       renderHuchas();
     });
   });
+  // La mitad derecha de la cabecera abre y cierra la edicion de la conjunta.
+  const tapConjunta = document.getElementById('conjuntaTap');
+  if(tapConjunta){
+    tapConjunta.addEventListener('click', ()=>{
+      editingBucket = editingBucket === CONJUNTA_KEY ? null : CONJUNTA_KEY;
+      renderHuchas();
+    });
+  }
   el.querySelectorAll('[data-save]').forEach(btn=>{
     btn.addEventListener('click', ()=>{
       const k = btn.dataset.save;
