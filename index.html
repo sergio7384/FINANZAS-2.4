@@ -391,7 +391,23 @@
   .gasto-row{ display:flex; align-items:center; gap:10px; padding:10px 0; border-bottom:1px solid var(--border); }
   .gasto-row:last-of-type{ border-bottom:0; }
   .gasto-row__dot{ width:8px; height:8px; border-radius:50%; flex-shrink:0; }
-  .gasto-row__main{ flex:1; min-width:0; }
+  .gasto-row__main{ flex:1; min-width:0; border:0; background:transparent; font-family:inherit;
+    text-align:left; padding:2px 0; border-radius:8px; transition:opacity 180ms; }
+  .gasto-row__main:active{ opacity:0.55; }
+  .gasto-periodo{ font-size:9.5px; font-weight:700; letter-spacing:0.06em; color:var(--text-faint);
+    text-transform:uppercase; margin-left:7px; }
+
+  /* aviso cuando el saldo no llega a lo que sueles gastar en esa hucha */
+  .hucha-aviso{
+    margin-top:9px; padding:8px 11px; border-radius:11px;
+    background:rgba(251,174,60,0.12); border:1px solid rgba(251,174,60,0.28);
+    font-size:11.5px; font-weight:600; color:#FBAE3C; line-height:1.4;
+  }
+
+  /* comparativa de ahorro en el cierre de mes */
+  .cierre-dif{ margin-top:4px; padding:11px 13px; border-radius:13px; font-size:13px; font-weight:700; text-align:center; }
+  .cierre-dif.bien{ background:rgba(52,211,153,0.13); border:1px solid rgba(52,211,153,0.3); color:#34D399; }
+  .cierre-dif.mal{ background:rgba(255,90,95,0.12); border:1px solid rgba(255,90,95,0.28); color:#FF5A5F; }
   .gasto-row__title{ font-size:13.5px; font-weight:700; color:var(--text); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
   .gasto-row__meta{ font-size:11px; color:var(--text-faint); margin-top:2px; text-transform:capitalize; }
   .gasto-row__amount{ font-size:13.5px; font-weight:800; color:var(--red); flex-shrink:0; font-variant-numeric:tabular-nums; }
@@ -563,7 +579,7 @@
    a las diez, la décima sube sola (2.49 -> 2.5). Tiene que coincidir con
    la de package.json y con la del nombre de caché de sw.js: hay un
    comprobador en scripts/check-version.mjs que lo verifica. */
-const APP_VERSION = '2.54';
+const APP_VERSION = '2.55';
 
 /* ============ ICONS ============ */
 const ICONS = {
@@ -584,6 +600,7 @@ const ICONS = {
   car:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 13l1.5-4.5A2 2 0 0 1 6.4 7h11.2a2 2 0 0 1 1.9 1.5L21 13"/><rect x="3" y="13" width="18" height="6" rx="2"/><circle cx="7.5" cy="19" r="1.4"/><circle cx="16.5" cy="19" r="1.4"/></svg>',
   bolt:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M13 2 4 14h6l-1 8 9-12h-6l1-8z"/></svg>',
   chevron:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M6 9l6 6 6-6"/></svg>',
+  repeat:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 2l4 4-4 4"/><path d="M3 12V10a4 4 0 0 1 4-4h14"/><path d="M7 22l-4-4 4-4"/><path d="M21 12v2a4 4 0 0 1-4 4H3"/></svg>',
 };
 const BANKS = [
   {key:'ibercaja', name:'Ibercaja', icon:'wallet', color:'#3D8BFD'},
@@ -1329,12 +1346,15 @@ function aplicarNomina(){
     btn.innerHTML = ICONS.save + 'Guardar nómina';
   }, 1800);
 
-  // pregunta si ha sobrado algo del mes anterior para cribarlo
+  // Guardar la nómina es el momento en que se cierra el mes anterior: se
+  // enseña cómo fue, y desde ahí se puede cribar lo que sobró. Si de ese
+  // mes no hay nada que contar, se pregunta por la criba como antes.
   setTimeout(()=>{
-    openAlert('🔻', '¿Te ha sobrado dinero?',
+    const r = resumenDelMes(etiquetaMesAnterior());
+    if(r.nomina || r.porHucha.length) renderCierreMesSheet(r);
+    else openAlert('🔻', '¿Te ha sobrado dinero?',
       'Antes de seguir, ¿quieres cribar lo que te ha sobrado del mes anterior entre Ahorro, Coche y Caprichos?',
-      ()=> renderCribaSheet()
-    );
+      ()=> renderCribaSheet());
   }, 1000);
 }
 
@@ -1434,6 +1454,9 @@ function renderHuchas(){
         <button class="btn" style="margin-top:10px;" data-save="${b.key}">${ICONS.check}Guardar</button>
       ` : `
         <div class="bucket-bar"><div style="width:${pct.toFixed(1)}%; background:${reached?'#34D399':b.color};"></div></div>
+        ${(()=>{ const c = huchaCorta(b.key); return c
+          ? `<div class="hucha-aviso">Te queda menos de lo que sueles gastar aquí (${fmt(c.media)}/mes)</div>`
+          : ''; })()}
         ${hasMeta
           ? `<div class="hint" style="text-align:left; margin-top:8px;">
                ${reached
@@ -1592,15 +1615,17 @@ function filaGasto(g){
   const b = BUCKETS.find(x=>x.key===g.bucket);
   const d = new Date(g.date);
   const dia = isNaN(d.getTime()) ? '' : d.toLocaleDateString('es-ES',{day:'2-digit', month:'short'});
+  // El cuerpo de la fila abre la edición; repetir queda como botón aparte
+  // porque crea un gasto nuevo y no conviene que salga sin querer.
   return `
     <div class="gasto-row">
       <span class="gasto-row__dot" style="background:${b ? b.color : '#888'}"></span>
-      <div class="gasto-row__main">
+      <button type="button" class="gasto-row__main" data-editar="${g.id}" aria-label="Editar gasto">
         <div class="gasto-row__title">${escapeHtml(g.concepto) || (b ? b.name : g.bucket)}</div>
-        <div class="gasto-row__meta">${dia}${b ? ' · ' + b.name : ''}</div>
-      </div>
+        <div class="gasto-row__meta">${dia}${b ? ' · ' + b.name : ''}${g.editado ? ' · editado' : ''}</div>
+      </button>
       <div class="gasto-row__amount">−${fmt(importeGasto(g))}</div>
-      <button class="icon-btn del" data-undo="${g.id}" aria-label="Deshacer gasto">${ICONS.trash}</button>
+      <button class="icon-btn" data-repetir="${g.id}" aria-label="Repetir gasto">${ICONS.repeat}</button>
     </div>`;
 }
 
@@ -1620,7 +1645,11 @@ function agruparPorMes(gastos){
 function renderLibroGastos(){
   const gastos = Array.isArray(state.gastos) ? state.gastos : [];
   if(gastos.length === 0) return '';
-  const total = gastos.reduce((s,g)=> s + importeGasto(g), 0);
+  // El total histórico solo sube y no dice nada; lo que importa es el mes
+  // que estás viviendo. El histórico por meses está al desplegar.
+  const mesActual = currentMonthLabel();
+  const delMes = gastos.filter(g=> etiquetaMesDe(g.date) === mesActual);
+  const totalMes = delMes.reduce((s,g)=> s + importeGasto(g), 0);
 
   const cuerpo = libroAbierto
     ? agruparPorMes(gastos).map(m=>`
@@ -1632,18 +1661,18 @@ function renderLibroGastos(){
       `).join('')
     : gastos.slice(0, LIBRO_PREVIO).map(filaGasto).join('');
 
-  const restantes = gastos.length - LIBRO_PREVIO;
   const pie = libroAbierto
     ? `<div class="gasto-pie">Toca para plegar</div>`
-    : (restantes > 0 ? `<div class="gasto-pie">Toca para ver los ${gastos.length} gastos por meses</div>` : '');
+    : (gastos.length > LIBRO_PREVIO ? `<div class="gasto-pie">Toca para ver los ${gastos.length} gastos por meses</div>` : '');
 
   return `
     <div class="card">
       <button type="button" class="card-head gasto-head" id="libroToggle"
               aria-expanded="${libroAbierto}" aria-label="Ver todos los gastos">
-        <div class="icon" style="background:#FF5A5F">${ICONS.minus}</div><span>Gastos</span>
+        <div class="icon" style="background:#FF5A5F">${ICONS.minus}</div>
+        <span>Gastos<span class="gasto-periodo">este mes</span></span>
         <div class="card-actions">
-          <span class="gasto-total">${fmt(total)}</span>
+          <span class="gasto-total">${fmt(totalMes)}</span>
           <span class="gasto-chevron ${libroAbierto ? 'abierto' : ''}">${ICONS.chevron}</span>
         </div>
       </button>
@@ -1658,8 +1687,18 @@ function escapeHtml(str){
 }
 
 function wireLibroGastos(){
-  document.querySelectorAll('[data-undo]').forEach(btn=>{
-    btn.addEventListener('click', ()=> deshacerGasto(btn.dataset.undo));
+  document.querySelectorAll('[data-editar]').forEach(btn=>{
+    btn.addEventListener('click', ()=>{
+      const g = (state.gastos||[]).find(x=> x.id === btn.dataset.editar);
+      if(g) abrirGastoSheet(g);
+    });
+  });
+  document.querySelectorAll('[data-repetir]').forEach(btn=>{
+    btn.addEventListener('click', ()=>{
+      const nuevo = repetirGasto(btn.dataset.repetir);
+      repintarTrasGasto();
+      avisoGastoRegistrado(nuevo);
+    });
   });
   const toggle = document.getElementById('libroToggle');
   if(toggle){
@@ -1876,6 +1915,70 @@ function deshacerGasto(id){
   if(activeTab === 'historial') renderHistorial();
 }
 
+/* Editar toca dos saldos cuando cambia de hucha: devuelve lo descontado a
+   la de origen y lo aplica en la de destino. La fecha original NO se toca,
+   para que el gasto siga contando en el mes en que ocurrió. */
+function editarGasto(id, bucketNuevo, importeNuevo, conceptoNuevo){
+  if(!Array.isArray(state.gastos)) return null;
+  const i = state.gastos.findIndex(g=> g.id === id);
+  if(i === -1) return null;
+  const bucket = BUCKETS.find(b=>b.key===bucketNuevo);
+  if(!bucket || !(importeNuevo > 0)) return null;
+  const g = state.gastos[i];
+
+  state.huchas[g.bucket] = (state.huchas[g.bucket] || 0) + (g.descontado != null ? g.descontado : g.importe);
+  const antes = state.huchas[bucketNuevo] || 0;
+  state.huchas[bucketNuevo] = Math.max(0, antes - importeNuevo);
+
+  g.bucket = bucketNuevo;
+  g.importe = importeNuevo;
+  g.descontado = antes - state.huchas[bucketNuevo];
+  g.concepto = (conceptoNuevo || '').trim();
+  g.editado = new Date().toISOString();
+  save();
+  return g;
+}
+
+/* Repetir crea un gasto nuevo con fecha de hoy; el original se queda donde
+   estaba, porque son dos gastos distintos aunque se llamen igual. */
+function repetirGasto(id){
+  if(!Array.isArray(state.gastos)) return null;
+  const g = state.gastos.find(x=> x.id === id);
+  if(!g) return null;
+  return registrarGasto(g.bucket, g.importe, g.concepto);
+}
+
+/* ---------- Lo que sueles gastar en cada hucha ---------- */
+/* Media mensual real, sacada del libro. El mes en curso va a medias (aún no
+   ha terminado), así que se deja fuera mientras haya meses completos con los
+   que comparar; si no, se usa lo que haya. */
+function gastoMedioMensual(key, mesesMax=6){
+  const gastos = Array.isArray(state.gastos) ? state.gastos : [];
+  const actual = currentMonthLabel();
+  const porMes = new Map();
+  for(const g of gastos){
+    if(g.bucket !== key) continue;
+    const mes = etiquetaMesDe(g.date);
+    porMes.set(mes, (porMes.get(mes) || 0) + (g.descontado != null ? g.descontado : g.importe));
+  }
+  if(porMes.size === 0) return 0;
+  let meses = [...porMes.entries()];
+  const completos = meses.filter(([mes]) => mes !== actual);
+  if(completos.length > 0) meses = completos;
+  meses = meses.slice(0, mesesMax);
+  return meses.reduce((s,[,v])=> s + v, 0) / meses.length;
+}
+
+/* Se avisa cuando el saldo no llega a lo que sueles gastar en esa hucha en
+   un mes: el umbral sale de tu propio historial, no de un número fijo. */
+function huchaCorta(key){
+  const media = gastoMedioMensual(key);
+  if(media <= 0) return null;
+  const saldo = state.huchas[key] || 0;
+  if(saldo >= media) return null;
+  return { media, saldo };
+}
+
 function avisoGastoRegistrado(g){
   if(!g) return;
   const bucket = BUCKETS.find(b=>b.key===g.bucket);
@@ -1884,45 +1987,90 @@ function avisoGastoRegistrado(g){
   showToast(fmt(g.descontado) + ' de ' + nombre + detalle, ()=> deshacerGasto(g.id));
 }
 
-/* --- Gasto rápido: restar de una hucha al momento --- */
-// Arranca en la primera del orden de BUCKETS, que es la que mas se usa.
-let sheetSelectedBucket = BUCKETS[0].key;
-function renderGastoSheet(prevAmount, prevConcepto){
+/* --- Gasto rápido: el mismo panel sirve para crear y para editar --- */
+/* Se guarda en una variable en vez de leerlo del DOM porque el panel se
+   repinta entero al cambiar de hucha, y si no se perderían los campos. */
+let sheetGasto = null;
+
+function abrirGastoSheet(gasto){
+  sheetGasto = gasto
+    ? { id:gasto.id, bucket:gasto.bucket, importe:String(gasto.importe).replace('.',','), concepto:gasto.concepto || '' }
+    : { id:null, bucket:BUCKETS[0].key, importe:'', concepto:'' };
+  renderGastoSheet();
+}
+
+function renderGastoSheet(){
+  if(!sheetGasto) return;
+  const editando = !!sheetGasto.id;
   const chips = BUCKETS.map(b=>`
-    <button class="bucket-chip ${b.key===sheetSelectedBucket?'active':''}" data-bucket="${b.key}">
+    <button class="bucket-chip ${b.key===sheetGasto.bucket?'active':''}" data-bucket="${b.key}">
       <span class="dot" style="background:${b.color}"></span>${b.name}
     </button>
   `).join('');
-  const cur = state.huchas[sheetSelectedBucket];
-  const curName = BUCKETS.find(b=>b.key===sheetSelectedBucket).name;
+  const bucket = BUCKETS.find(b=>b.key===sheetGasto.bucket);
+  const saldo = state.huchas[sheetGasto.bucket] || 0;
+  const media = gastoMedioMensual(sheetGasto.bucket);
+  // Saber lo que sueles gastar aquí justo antes de gastar es el momento en
+  // que más sirve, así que va en la propia línea de saldo.
+  const suele = media > 0
+    ? ` · sueles gastar <b style="color:var(--text-dim)">${fmt(media)}</b>/mes`
+    : '';
+
   openSheet(`
-    <h2>💸 Gasto rápido</h2>
+    <h2>${editando ? '✏️ Editar gasto' : '💸 Gasto rápido'}</h2>
     <div class="bucket-picker">${chips}</div>
-    <div class="hint" style="margin:-6px 0 12px; text-align:left;">Saldo en ${curName}: ${fmt(cur)}</div>
-    <input class="sheet-amount" inputmode="decimal" id="gastoAmount" placeholder="0,00" value="${prevAmount||''}">
-    <input class="sheet-note" id="gastoConcepto" placeholder="En qué (opcional)" value="${prevConcepto||''}">
-    <button class="btn danger" id="btnConfirmGasto">${ICONS.check}Descontar</button>
+    <div class="hint" style="margin:-6px 0 12px; text-align:left;">Saldo en ${bucket.name}: ${fmt(saldo)}${suele}</div>
+    <input class="sheet-amount" inputmode="decimal" id="gastoAmount" placeholder="0,00" value="${sheetGasto.importe}">
+    <input class="sheet-note" id="gastoConcepto" placeholder="En qué (opcional)" value="${escapeHtml(sheetGasto.concepto)}">
+    <button class="btn ${editando ? '' : 'danger'}" id="btnConfirmGasto">${ICONS.check}${editando ? 'Guardar cambios' : 'Descontar'}</button>
+    ${editando ? `<button class="btn ghost" id="btnBorrarGasto" style="margin-top:10px;">${ICONS.trash}Eliminar gasto</button>` : ''}
   `);
+
+  const leerCampos = ()=>{
+    const a = document.getElementById('gastoAmount');
+    const c = document.getElementById('gastoConcepto');
+    if(a) sheetGasto.importe = a.value;
+    if(c) sheetGasto.concepto = c.value;
+  };
+
   document.querySelectorAll('.bucket-picker .bucket-chip').forEach(chip=>{
     chip.addEventListener('click', ()=>{
-      sheetSelectedBucket = chip.dataset.bucket;
-      const amt = document.getElementById('gastoAmount').value;
-      const con = document.getElementById('gastoConcepto').value;
-      renderGastoSheet(amt, con);
+      leerCampos();
+      sheetGasto.bucket = chip.dataset.bucket;
+      renderGastoSheet();
     });
   });
+
   document.getElementById('btnConfirmGasto').addEventListener('click', ()=>{
-    const val = parseFloat((document.getElementById('gastoAmount').value||'0').replace(',','.')) || 0;
-    if(val<=0){ closeSheet(); return; }
-    const concepto = (document.getElementById('gastoConcepto').value||'');
-    const g = registrarGasto(sheetSelectedBucket, val, concepto);
-    updateQuickStats();
-    if(activeTab==='huchas') renderHuchas();
-    if(activeTab==='historial') renderHistorial();
+    leerCampos();
+    const val = parseFloat((sheetGasto.importe||'0').replace(',','.')) || 0;
+    if(val <= 0){ closeSheet(); return; }
+    const g = editando
+      ? editarGasto(sheetGasto.id, sheetGasto.bucket, val, sheetGasto.concepto)
+      : registrarGasto(sheetGasto.bucket, val, sheetGasto.concepto);
     closeSheet();
-    avisoGastoRegistrado(g);
+    repintarTrasGasto();
+    if(!editando) avisoGastoRegistrado(g);
   });
-  setTimeout(()=>{ const i=document.getElementById('gastoAmount'); if(i) i.focus(); }, 380);
+
+  const borrar = document.getElementById('btnBorrarGasto');
+  if(borrar){
+    borrar.addEventListener('click', ()=>{
+      const id = sheetGasto.id;
+      closeSheet();
+      deshacerGasto(id);
+    });
+  }
+
+  if(!editando) setTimeout(()=>{ const i=document.getElementById('gastoAmount'); if(i) i.focus(); }, 380);
+}
+
+/* Un gasto cambia saldos y libro a la vez, así que todo lo que los enseña
+   se repinta desde un solo sitio. */
+function repintarTrasGasto(){
+  updateQuickStats();
+  if(activeTab === 'huchas') renderHuchas();
+  if(activeTab === 'historial') renderHistorial();
 }
 
 /* --- Distribución: los sliders salen del Resumen a un panel propio --- */
@@ -1960,6 +2108,62 @@ function renderDistribucionSheet(){
     // de lo que se acabe de tocar aquí.
     if(activeTab === 'resumen') renderResumen();
   });
+}
+
+/* --- Cierre de mes: qué pasó en el mes que acabas de dejar atrás --- */
+function etiquetaMesAnterior(){
+  const d = new Date();
+  d.setDate(1);
+  d.setMonth(d.getMonth() - 1);
+  return `${monthNames[d.getMonth()]} DE ${d.getFullYear()}`;
+}
+
+function resumenDelMes(etiqueta){
+  const gastos = (state.gastos || []).filter(g=> etiquetaMesDe(g.date) === etiqueta);
+  const porHucha = BUCKETS.map(b=>({
+    bucket: b,
+    total: gastos.filter(g=> g.bucket === b.key).reduce((s,g)=> s + importeGasto(g), 0),
+  })).filter(x=> x.total > 0).sort((a,b)=> b.total - a.total);
+  const nomina = state.historial.find(h=> h.label === etiqueta) || null;
+  // La nómina anterior a esa, para poder decir si se ahorró más o menos.
+  const idx = nomina ? state.historial.indexOf(nomina) : -1;
+  const previa = idx >= 0 ? state.historial[idx + 1] : null;
+  return {
+    etiqueta, porHucha, nomina, previa,
+    gastado: porHucha.reduce((s,x)=> s + x.total, 0),
+    ahorrado: nomina && nomina.aportadoHuchas ? (nomina.aportadoHuchas.ahorro || 0) : 0,
+    ahorradoPrevio: previa && previa.aportadoHuchas ? (previa.aportadoHuchas.ahorro || 0) : null,
+  };
+}
+
+function renderCierreMesSheet(r){
+  const dif = r.ahorradoPrevio != null ? r.ahorrado - r.ahorradoPrevio : null;
+  const comparativa = dif == null ? '' : `
+    <div class="cierre-dif ${dif >= 0 ? 'bien' : 'mal'}">
+      ${dif >= 0 ? '▲' : '▼'} ${fmt(Math.abs(dif))} ${dif >= 0 ? 'más' : 'menos'} de ahorro que el mes anterior
+    </div>`;
+  openSheet(`
+    <h2>Cómo fue ${r.etiqueta.toLowerCase()}</h2>
+    ${r.nomina ? `
+      <div class="highlight" style="margin-bottom:14px;">
+        <div class="label">Entró</div><div class="value">${fmt(r.nomina.neto)}</div>
+      </div>` : ''}
+    ${r.porHucha.length ? `
+      <div class="sheet-group">
+        <div class="sheet-group__title">Gastado · ${fmt(r.gastado)}</div>
+        ${r.porHucha.map(x=>`
+          <div class="bank-split__row">
+            <span class="bank-split__dot" style="background:${x.bucket.color}"></span>
+            <span class="bank-split__name">${x.bucket.name}</span>
+            <span class="bank-split__amt">${fmt(x.total)}</span>
+          </div>`).join('')}
+      </div>` : `<div class="hint" style="text-align:left; margin-bottom:14px;">No registraste ningún gasto ese mes.</div>`}
+    ${comparativa}
+    <button class="btn ghost" id="btnCierreCriba" style="margin-top:14px;">Cribar lo que sobró</button>
+    <button class="btn" id="btnCierreHecho" style="margin-top:10px;">${ICONS.check}Hecho</button>
+  `);
+  document.getElementById('btnCierreCriba').addEventListener('click', ()=> renderCribaSheet());
+  document.getElementById('btnCierreHecho').addEventListener('click', ()=> closeSheet());
 }
 
 /* --- Cribar sobras: repartir lo que sobró del mes entre las huchas --- */
@@ -2002,7 +2206,7 @@ function renderCribaSheet(){
   });
 }
 
-document.getElementById('fabGasto').addEventListener('click', ()=> renderGastoSheet());
+document.getElementById('fabGasto').addEventListener('click', ()=> abrirGastoSheet(null));
 
 /* ============ TABS / SWIPE ============ */
 const tabs = ['resumen','huchas','historial'];
