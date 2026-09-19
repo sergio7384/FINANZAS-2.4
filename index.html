@@ -506,6 +506,13 @@
 </nav>
 
 <script>
+/* ============ VERSIÓN ============
+   Sube una centésima por cada cambio publicado (2.4 -> 2.41 -> 2.42 ...);
+   a las diez, la décima sube sola (2.49 -> 2.5). Tiene que coincidir con
+   la de package.json y con la del nombre de caché de sw.js: hay un
+   comprobador en scripts/check-version.mjs que lo verifica. */
+const APP_VERSION = '2.5';
+
 /* ============ ICONS ============ */
 const ICONS = {
   wallet:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="6" width="18" height="13" rx="2"/><path d="M3 10h18"/><circle cx="16.5" cy="14.5" r="1"/></svg>',
@@ -765,9 +772,11 @@ document.getElementById('googleSignInBtn').addEventListener('click', async ()=>{
 });
 document.getElementById('accountBtn').addEventListener('click', ()=>{
   const cuenta = (currentUser && currentUser.email) || 'esta cuenta';
-  openAlert('👋', 'Cerrar sesión', `Sesión iniciada como ${cuenta}. ¿Cerrarla en este dispositivo?`, ()=>{
-    auth.signOut();
-  });
+  // La versión se enseña aquí para poder comprobar de un vistazo si el
+  // móvil ya tiene cargada la última publicada.
+  openAlert('👋', 'Cerrar sesión',
+    `Sesión iniciada como ${cuenta}. ¿Cerrarla en este dispositivo?<br><br><span style="opacity:0.55; font-size:12px;">Finanzas ${APP_VERSION}</span>`,
+    ()=>{ auth.signOut(); });
 });
 
 /* Si hay un finanzas-state antiguo en este navegador (de antes de tener
