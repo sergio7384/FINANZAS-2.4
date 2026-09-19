@@ -1,5 +1,13 @@
 # Node / Capacitor
-node_modules/
+# El Podfile de Capacitor apunta a node_modules/@capacitor/ios con :path, y el
+# runner macOS no instala dependencias JS (ios-builder detecta este repo como
+# proyecto iOS nativo, no como React Native). Por eso ese paquete -649 KB de
+# fuentes Swift, sin dependencias propias- se versiona; el resto de node_modules
+# no. Al subir de version de Capacitor hay que volver a commitear esa carpeta.
+node_modules/*
+!node_modules/@capacitor/
+node_modules/@capacitor/*
+!node_modules/@capacitor/ios/
 www/
 
 # iOS (generado en el runner macOS, no en Windows)
