@@ -1,0 +1,34 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <defs>
+    <radialGradient id="fondo" cx="50%" cy="38%" r="78%">
+      <stop offset="0%" stop-color="#171A25"/>
+      <stop offset="60%" stop-color="#0D0F16"/>
+      <stop offset="100%" stop-color="#07080E"/>
+    </radialGradient>
+    <filter id="brillo" x="-40%" y="-40%" width="180%" height="180%">
+      <feGaussianBlur stdDeviation="26" result="b"/>
+      <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+  </defs>
+  <rect width="512" height="512" fill="url(#fondo)"/>
+  <g transform="rotate(-90 256 256)" opacity="0.38" filter="url(#brillo)"><circle cx="256" cy="256" r="148" fill="none" stroke="#3D8BFD"
+      stroke-width="52" stroke-linecap="round"
+      stroke-dasharray="241.47 688.44"
+      stroke-dashoffset="0.00"/><circle cx="256" cy="256" r="148" fill="none" stroke="#34D399"
+      stroke-width="52" stroke-linecap="round"
+      stroke-dasharray="241.47 688.44"
+      stroke-dashoffset="-321.47"/><circle cx="256" cy="256" r="148" fill="none" stroke="#FBAE3C"
+      stroke-width="52" stroke-linecap="round"
+      stroke-dasharray="206.97 722.94"
+      stroke-dashoffset="-642.94"/></g>
+  <g transform="rotate(-90 256 256)"><circle cx="256" cy="256" r="148" fill="none" stroke="#3D8BFD"
+      stroke-width="52" stroke-linecap="round"
+      stroke-dasharray="241.47 688.44"
+      stroke-dashoffset="0.00"/><circle cx="256" cy="256" r="148" fill="none" stroke="#34D399"
+      stroke-width="52" stroke-linecap="round"
+      stroke-dasharray="241.47 688.44"
+      stroke-dashoffset="-321.47"/><circle cx="256" cy="256" r="148" fill="none" stroke="#FBAE3C"
+      stroke-width="52" stroke-linecap="round"
+      stroke-dasharray="206.97 722.94"
+      stroke-dashoffset="-642.94"/></g>
+</svg>
