@@ -193,6 +193,9 @@
   .alert-actions .btn{ margin:0; }
   .alert-cancelar{ margin-top:14px; font-size:11px; font-weight:600; color:var(--text-faint); }
   /* marca de las entradas que no son la nómina del mes */
+  .archivo-toggle{ margin:4px 0 14px; gap:8px; font-size:13.5px; }
+  .archivo-toggle .gasto-chevron{ color:var(--text-faint); }
+  .edit-punto{ display:inline-block; width:7px; height:7px; border-radius:50%; margin-right:7px; vertical-align:middle; }
   .entrada-tag{ margin-left:8px; padding:3px 8px; border-radius:100px; font-size:9.5px; font-weight:800;
     letter-spacing:0.05em; text-transform:uppercase; color:#34D399;
     background:rgba(52,211,153,0.14); border:1px solid rgba(52,211,153,0.3); }
@@ -585,7 +588,7 @@
    a las diez, la décima sube sola (2.49 -> 2.5). Tiene que coincidir con
    la de package.json y con la del nombre de caché de sw.js: hay un
    comprobador en scripts/check-version.mjs que lo verifica. */
-const APP_VERSION = '2.56';
+const APP_VERSION = '2.57';
 
 /* ============ ICONS ============ */
 const ICONS = {
@@ -1583,7 +1586,21 @@ function renderHistorial(){
     </div>
   ` : '';
 
-  el.innerHTML = libro + chart + state.historial.map((h,i)=>{
+  // Se agrupa por mes y solo se despliegan los más recientes: con un año de
+  // uso, pintar todas las tarjetas hace la pestaña interminable.
+  const meses = [];
+  state.historial.forEach((h,i)=>{
+    const ultimo = meses[meses.length - 1];
+    if(ultimo && ultimo.label === h.label) ultimo.entradas.push({h, i});
+    else meses.push({ label:h.label, entradas:[{h, i}] });
+  });
+  const recientes = meses.slice(0, HISTORIAL_MESES);
+  const antiguos = meses.slice(HISTORIAL_MESES);
+  // Un mes archivado que se esté editando tiene que seguir viéndose.
+  const editandoEnAntiguos = antiguos.some(m=> m.entradas.some(e=> e.i === editingIdx));
+  const verAntiguos = historialAbierto || editandoEnAntiguos;
+
+  const tarjeta = ({h, i})=>{
     const isEditing = editingIdx === i;
     const ah = h.aportadoHuchas || {ahorro:0,coche:0,caprichos:0};
     return `
@@ -1609,17 +1626,37 @@ function renderHistorial(){
         </div>
       ` : `
         <div class="edit-field"><div class="label">Sueldo neto</div><input inputmode="decimal" data-f="neto" value="${h.neto}"></div>
-        <div class="edit-field"><div class="label">Gastos fijos</div><input inputmode="decimal" data-f="gastos" value="${h.dist.gastos}"></div>
-        <div class="edit-field"><div class="label">Ahorro (hucha)</div><input inputmode="decimal" data-f="ahorro" value="${ah.ahorro}"></div>
-        <div class="edit-field"><div class="label">Ocio</div><input inputmode="decimal" data-f="ocio" value="${h.dist.ocio}"></div>
-        <div class="edit-field"><div class="label">Coche (hucha)</div><input inputmode="decimal" data-f="coche" value="${ah.coche}"></div>
-        <div class="edit-field"><div class="label">Caprichos (hucha)</div><input inputmode="decimal" data-f="caprichos" value="${ah.caprichos}"></div>
+        ${BUCKETS.map(b=>`
+          <div class="edit-field">
+            <div class="label"><span class="edit-punto" style="background:${b.color}"></span>${b.name}</div>
+            <input inputmode="decimal" data-f="${b.key}" value="${ah[b.key] || 0}">
+          </div>`).join('')}
+        <div class="hint" style="text-align:left; margin-top:8px;">Son las cantidades que esta nómina aportó a cada hucha. Al guardar, los saldos se ajustan por la diferencia.</div>
         <button class="btn" style="margin-top:12px;" data-act="save" data-i="${i}">${ICONS.check}Guardar cambios</button>
       `}
     </div>
-  `}).join('');
+  `};
+
+  const archivo = antiguos.length ? `
+    <button type="button" class="btn ghost archivo-toggle" id="archivoToggle">
+      ${verAntiguos ? 'Ocultar' : 'Ver'} ${antiguos.length} ${antiguos.length===1?'mes anterior':'meses anteriores'}
+      <span class="gasto-chevron ${verAntiguos?'abierto':''}">${ICONS.chevron}</span>
+    </button>` : '';
+
+  el.innerHTML = libro + chart
+    + recientes.flatMap(m=> m.entradas).map(tarjeta).join('')
+    + archivo
+    + (verAntiguos ? antiguos.flatMap(m=> m.entradas).map(tarjeta).join('') : '');
 
   wireLibroGastos();
+
+  const toggleArchivo = document.getElementById('archivoToggle');
+  if(toggleArchivo){
+    toggleArchivo.addEventListener('click', ()=>{
+      historialAbierto = !historialAbierto;
+      renderHistorial();
+    });
+  }
 
   el.querySelectorAll('[data-act]').forEach(btn=>{
     const i = parseInt(btn.dataset.i);
@@ -1647,6 +1684,10 @@ function renderHistorial(){
    pulsar la cabecera se despliegan todos agrupados por mes. */
 const LIBRO_PREVIO = 3;
 let libroAbierto = false;
+
+/* Meses de nóminas que se ven sin desplegar; el resto van al archivo. */
+const HISTORIAL_MESES = 3;
+let historialAbierto = false;
 
 /* Mismo formato que las etiquetas del historial de nóminas, para que los
    dos apartados de la pestaña hablen igual. */
@@ -1786,20 +1827,28 @@ function deleteEntry(i){
 
 function saveEditEntry(i){
   const card = document.querySelector(`.card[data-idx="${i}"]`);
-  const get = f => parseFloat(card.querySelector(`[data-f="${f}"]`).value.replace(',','.')) || 0;
+  const get = f => parseFloat((card.querySelector(`[data-f="${f}"]`).value||'0').replace(',','.')) || 0;
   const h = state.historial[i];
-  const oldAh = h.aportadoHuchas || {};
-  const editedAh = { ahorro:get('ahorro'), coche:get('coche'), caprichos:get('caprichos') };
-  const newAh = { ...oldAh, ...editedAh };
+  const antes = h.aportadoHuchas || {};
 
-  // ajusta las huchas por la diferencia entre el valor viejo y el nuevo (solo campos editados)
-  ['ahorro','coche','caprichos'].forEach(k=>{
-    state.huchas[k] = Math.max(0, state.huchas[k] - (oldAh[k]||0) + editedAh[k]);
+  // Se reconcilian TODAS las huchas. Antes solo se ajustaban ahorro, coche y
+  // caprichos, así que tocar Gastos u Ocio cambiaba el historial pero dejaba
+  // el saldo de esas huchas como estaba: un descuadre silencioso.
+  const nuevo = {};
+  BUCKETS.forEach(b=>{ nuevo[b.key] = Math.max(0, get(b.key)); });
+  BUCKETS.forEach(b=>{
+    state.huchas[b.key] = Math.max(0, (state.huchas[b.key] || 0) - (antes[b.key] || 0) + nuevo[b.key]);
   });
 
   h.neto = get('neto');
-  h.dist = { gastos:get('gastos'), ahorro:h.dist.ahorro, ocio:get('ocio') };
-  h.aportadoHuchas = newAh;
+  h.aportadoHuchas = nuevo;
+  // El reparto principal se deriva de lo aportado: el ocio de la nómina es
+  // la suma de ocio libre, coche y caprichos.
+  h.dist = {
+    gastos: nuevo.gastos,
+    ahorro: nuevo.ahorro,
+    ocio: nuevo.ocio + nuevo.coche + nuevo.caprichos,
+  };
 
   editingIdx = null;
   save();
