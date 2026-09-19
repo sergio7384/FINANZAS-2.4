@@ -189,7 +189,13 @@
   .alert-box h3{ font-size:17px; font-weight:800; margin:0 0 8px; letter-spacing:-0.01em; }
   .alert-box p{ font-size:13.5px; color:var(--text-dim); margin:0 0 20px; line-height:1.5; }
   .alert-actions{ display:flex; gap:10px; }
+  .alert-actions.apiladas{ flex-direction:column; }
   .alert-actions .btn{ margin:0; }
+  .alert-cancelar{ margin-top:14px; font-size:11px; font-weight:600; color:var(--text-faint); }
+  /* marca de las entradas que no son la nómina del mes */
+  .entrada-tag{ margin-left:8px; padding:3px 8px; border-radius:100px; font-size:9.5px; font-weight:800;
+    letter-spacing:0.05em; text-transform:uppercase; color:#34D399;
+    background:rgba(52,211,153,0.14); border:1px solid rgba(52,211,153,0.3); }
 
   /* ---------- Bottom floating glass nav ---------- */
   .navbar{
@@ -579,7 +585,7 @@
    a las diez, la décima sube sola (2.49 -> 2.5). Tiene que coincidir con
    la de package.json y con la del nombre de caché de sw.js: hay un
    comprobador en scripts/check-version.mjs que lo verifica. */
-const APP_VERSION = '2.55';
+const APP_VERSION = '2.56';
 
 /* ============ ICONS ============ */
 const ICONS = {
@@ -975,28 +981,35 @@ async function load(){
 
 /* ============ HELPERS ============ */
 const fmt = n => (isFinite(n)? n : 0).toLocaleString('es-ES',{minimumFractionDigits:2, maximumFractionDigits:2}) + ' €';
-function neto(){
-  const {base, deduccionCasa, deduccionConjunta} = state.ingresos;
+/* Las deducciones son las de siempre; lo único que cambia entre la nómina
+   normal y un ingreso extra es el bruto del que se parte. */
+function netoDe(base){
+  const {deduccionCasa, deduccionConjunta} = state.ingresos;
   return Math.max(0, (parseFloat(base)||0) - (parseFloat(deduccionCasa)||0) - (parseFloat(deduccionConjunta)||0));
 }
-function distAmounts(){
-  const n = neto();
+function neto(){
+  return netoDe(state.ingresos.base);
+}
+/* Sin argumento reparten el neto de pantalla, que es lo que hace todo el
+   Resumen; con argumento, el de un ingreso puntual. */
+function distAmounts(n){
+  if(n === undefined) n = neto();
   return {
     gastos: n * state.distPct.gastos/100,
     ahorro: n * state.distPct.ahorro/100,
     ocio: n * state.distPct.ocio/100,
   };
 }
-function ocioAmounts(){
-  const ocio = distAmounts().ocio;
+function ocioAmounts(n){
+  const ocio = distAmounts(n).ocio;
   return {
     libre: ocio * state.ocioPct.libre/100,
     coche: ocio * state.ocioPct.coche/100,
     caprichos: ocio * state.ocioPct.caprichos/100,
   };
 }
-function bancoAmounts(){
-  const d = distAmounts();
+function bancoAmounts(n){
+  const d = distAmounts(n);
   return {
     ibercaja: d.gastos + (parseFloat(state.ingresos.deduccionCasa)||0),
     revolut: d.ocio + (parseFloat(state.ingresos.deduccionConjunta)||0),
@@ -1287,29 +1300,58 @@ function refreshResumenNumbers(activeKey){
 /* Guardar la nomina suma a las huchas, asi que pulsar dos veces el mismo
    mes duplicaria el dinero. Si ya hay una entrada de este mes se pregunta
    antes: reemplazar deshace el aporte anterior y vuelve a aplicarlo. */
+/* Con una nómina ya guardada este mes, volver a pulsar casi nunca es
+   querer rehacerla: o entró dinero de más, o se cobró dos veces. Se
+   pregunta cuál de las dos, y ambas SUMAN, no reemplazan. Para corregir un
+   guardado mal está borrar la entrada desde Historial, que devuelve a las
+   huchas lo que aportó. */
 function guardarNomina(){
   const etiqueta = currentMonthLabel();
-  const yaGuardado = state.historial.findIndex(h=> h.label === etiqueta);
-  if(yaGuardado === -1){ aplicarNomina(); return; }
-  openAlert('⚠️', 'Ya guardaste ' + etiqueta.toLowerCase(),
-    'Si la guardas otra vez se duplicaría el dinero en las huchas. ¿Quieres reemplazar la nómina de este mes por la de ahora?',
-    ()=>{
-      const previa = state.historial[yaGuardado];
-      // Se devuelve a cada hucha lo que aquella nomina le habia aportado
-      // antes de aplicar la nueva, para que el saldo no se infle.
-      const aportePrevio = previa.aportadoHuchas || {};
-      BUCKETS.forEach(b=>{
-        state.huchas[b.key] = Math.max(0, state.huchas[b.key] - (aportePrevio[b.key] || 0));
-      });
-      state.historial.splice(yaGuardado, 1);
-      aplicarNomina();
-    }
-  );
+  const yaGuardado = state.historial.some(h=> h.label === etiqueta);
+  if(!yaGuardado){ aplicarNomina(); return; }
+  openChoice('💰', 'Ya hay una nómina de ' + etiqueta.toLowerCase(),
+    '¿Qué es lo que quieres añadir a este mes?', [
+      { label:'Ingreso extra', ghost:true, onClick:()=> renderIngresoExtraSheet() },
+      { label:'Otra nómina del mes', onClick:()=> aplicarNomina() },
+    ]);
 }
 
-function aplicarNomina(){
-  const d = distAmounts();
-  const o = ocioAmounts();
+/* Un ingreso extra se trata igual que una nómina —mismas deducciones y
+   mismos porcentajes—, solo cambia de dónde sale el importe de partida. */
+function renderIngresoExtraSheet(){
+  openSheet(`
+    <h2>💰 Ingreso extra</h2>
+    <div class="hint" style="text-align:left; margin:-8px 0 14px;">Se reparte como una nómina: se le restan las deducciones y se aplica tu distribución actual.</div>
+    <input class="sheet-amount" inputmode="decimal" id="extraAmount" placeholder="0,00">
+    <input class="sheet-note" id="extraConcepto" placeholder="De qué es (opcional)">
+    <div class="highlight" style="margin:0 0 14px;">
+      <div class="label">Se repartirán</div>
+      <div class="value" id="extraNeto">${fmt(0)}</div>
+    </div>
+    <button class="btn" id="btnConfirmExtra">${ICONS.check}Añadir al mes</button>
+  `);
+  const campo = document.getElementById('extraAmount');
+  const pintarNeto = ()=>{
+    const base = parseFloat((campo.value||'0').replace(',','.')) || 0;
+    document.getElementById('extraNeto').textContent = fmt(netoDe(base));
+  };
+  campo.addEventListener('input', pintarNeto);
+  document.getElementById('btnConfirmExtra').addEventListener('click', ()=>{
+    const base = parseFloat((campo.value||'0').replace(',','.')) || 0;
+    if(base <= 0){ closeSheet(); return; }
+    const concepto = (document.getElementById('extraConcepto').value||'').trim();
+    closeSheet();
+    aplicarNomina({ base, tipo:'extra', concepto });
+  });
+  setTimeout(()=> campo.focus(), 380);
+}
+
+function aplicarNomina(opciones){
+  const op = opciones || {};
+  const esExtra = op.tipo === 'extra';
+  const n = esExtra ? netoDe(op.base) : neto();
+  const d = distAmounts(n);
+  const o = ocioAmounts(n);
   const conjunta = parseFloat(state.ingresos.deduccionConjunta) || 0;
 
   // La nómina alimenta todas las huchas de golpe
@@ -1323,13 +1365,17 @@ function aplicarNomina(){
   };
   BUCKETS.forEach(b=> state.huchas[b.key] += aporte[b.key] || 0);
 
+  // Un mes puede tener varias entradas: la nómina, una segunda nómina si se
+  // cobró dos veces, y los ingresos extra. Todas suman.
   state.historial.unshift({
     label: currentMonthLabel(),
     date: new Date().toISOString(),
-    neto: neto(),
+    neto: n,
     dist: d,
-    banco: bancoAmounts(),
+    banco: bancoAmounts(n),
     aportadoHuchas: aporte,
+    tipo: esExtra ? 'extra' : 'nomina',
+    concepto: op.concepto || '',
   });
   save();
   updateStreakBadge();
@@ -1351,7 +1397,7 @@ function aplicarNomina(){
   // mes no hay nada que contar, se pregunta por la criba como antes.
   setTimeout(()=>{
     const r = resumenDelMes(etiquetaMesAnterior());
-    if(r.nomina || r.porHucha.length) renderCierreMesSheet(r);
+    if(r.entradas.length || r.porHucha.length) renderCierreMesSheet(r);
     else openAlert('🔻', '¿Te ha sobrado dinero?',
       'Antes de seguir, ¿quieres cribar lo que te ha sobrado del mes anterior entre Ahorro, Coche y Caprichos?',
       ()=> renderCribaSheet());
@@ -1543,7 +1589,8 @@ function renderHistorial(){
     return `
     <div class="card" data-idx="${i}">
       <div class="card-head">
-        <div class="icon" style="background:#8B7CFA">${ICONS.trend}</div><span>${h.label}</span>
+        <div class="icon" style="background:${h.tipo==='extra' ? '#34D399' : '#8B7CFA'}">${ICONS.trend}</div>
+        <span>${h.label}${h.tipo==='extra' ? `<span class="entrada-tag">extra${h.concepto ? ' · ' + escapeHtml(h.concepto) : ''}</span>` : ''}</span>
         <div class="card-actions">
           <button class="icon-btn edit ${isEditing?'on':''}" data-act="edit" data-i="${i}">${isEditing?ICONS.x:ICONS.pencil}</button>
           <button class="icon-btn del ${deleteArmedIdx===i?'confirm':''}" data-act="del" data-i="${i}">${ICONS.trash}</button>
@@ -1836,19 +1883,39 @@ document.getElementById('sheetOverlay').addEventListener('click', e=>{
 
 /* centered iOS-style alert popup */
 function openAlert(icon, title, message, onYes, onNo){
+  // Se conservan los ids de siempre: un diálogo de sí/no sigue teniendo
+  // #alertNo y #alertYes aunque por dentro lo pinte openChoice.
+  openChoice(icon, title, message, [
+    { id:'alertNo', label:'No', ghost:true, onClick:onNo },
+    { id:'alertYes', label:'Sí', onClick:onYes },
+  ]);
+}
+
+/* Diálogo con las opciones que haga falta, en vez de solo sí/no. Las de
+   más de dos se apilan, porque en horizontal no caben los textos. */
+function openChoice(icon, title, message, opciones){
+  const apiladas = opciones.length > 2;
   document.getElementById('alertBox').innerHTML = `
     <div class="alert-icon">${icon}</div>
     <h3>${title}</h3>
     <p>${message}</p>
-    <div class="alert-actions">
-      <button class="btn ghost" id="alertNo" style="margin:0;">No</button>
-      <button class="btn" id="alertYes" style="margin:0;">Sí</button>
+    <div class="alert-actions${apiladas ? ' apiladas' : ''}">
+      ${opciones.map((o,i)=>`<button class="btn ${o.ghost?'ghost':''} ${o.danger?'danger':''}"${o.id?` id="${o.id}"`:''} data-opt="${i}" style="margin:0;">${o.label}</button>`).join('')}
     </div>
+    <div class="alert-cancelar">Toca fuera para cancelar</div>
   `;
   document.getElementById('alertOverlay').classList.add('open');
-  document.getElementById('alertYes').addEventListener('click', ()=>{ closeAlert(); if(onYes) onYes(); });
-  document.getElementById('alertNo').addEventListener('click', ()=>{ closeAlert(); if(onNo) onNo(); });
+  document.querySelectorAll('#alertBox [data-opt]').forEach(btn=>{
+    const o = opciones[parseInt(btn.dataset.opt)];
+    btn.addEventListener('click', ()=>{ closeAlert(); if(o.onClick) o.onClick(); });
+  });
 }
+
+/* Tocar fuera cancela, igual que en los paneles. Se comprueba que el toque
+   sea en el fondo y no dentro del cuadro. */
+document.getElementById('alertOverlay').addEventListener('click', e=>{
+  if(e.target === e.currentTarget) closeAlert();
+});
 function closeAlert(){
   document.getElementById('alertOverlay').classList.remove('open');
   repintarSiQuedoPendiente();
@@ -2124,15 +2191,27 @@ function resumenDelMes(etiqueta){
     bucket: b,
     total: gastos.filter(g=> g.bucket === b.key).reduce((s,g)=> s + importeGasto(g), 0),
   })).filter(x=> x.total > 0).sort((a,b)=> b.total - a.total);
-  const nomina = state.historial.find(h=> h.label === etiqueta) || null;
-  // La nómina anterior a esa, para poder decir si se ahorró más o menos.
-  const idx = nomina ? state.historial.indexOf(nomina) : -1;
-  const previa = idx >= 0 ? state.historial[idx + 1] : null;
+  // Un mes puede tener varias entradas (segunda nómina, ingresos extra),
+  // así que se suman todas en vez de coger la primera.
+  const entradas = state.historial.filter(h=> h.label === etiqueta);
+  const entrado = entradas.reduce((s,h)=> s + (h.neto || 0), 0);
+  const ahorrado = entradas.reduce((s,h)=> s + ((h.aportadoHuchas||{}).ahorro || 0), 0);
+
+  // El mes anterior a ese, para decir si se ahorró más o menos. El historial
+  // va del más nuevo al más viejo, así que basta con la lista de meses
+  // distintos en ese orden y coger el siguiente al nuestro.
+  const meses = [];
+  for(const h of state.historial) if(!meses.includes(h.label)) meses.push(h.label);
+  const i = meses.indexOf(etiqueta);
+  const etiquetaPrevia = i === -1 ? meses[0] : meses[i + 1];
+  const ahorradoPrevio = etiquetaPrevia
+    ? state.historial.filter(h=> h.label === etiquetaPrevia)
+        .reduce((s,h)=> s + ((h.aportadoHuchas||{}).ahorro || 0), 0)
+    : null;
+
   return {
-    etiqueta, porHucha, nomina, previa,
+    etiqueta, porHucha, entradas, entrado, ahorrado, ahorradoPrevio,
     gastado: porHucha.reduce((s,x)=> s + x.total, 0),
-    ahorrado: nomina && nomina.aportadoHuchas ? (nomina.aportadoHuchas.ahorro || 0) : 0,
-    ahorradoPrevio: previa && previa.aportadoHuchas ? (previa.aportadoHuchas.ahorro || 0) : null,
   };
 }
 
@@ -2144,9 +2223,10 @@ function renderCierreMesSheet(r){
     </div>`;
   openSheet(`
     <h2>Cómo fue ${r.etiqueta.toLowerCase()}</h2>
-    ${r.nomina ? `
+    ${r.entradas.length ? `
       <div class="highlight" style="margin-bottom:14px;">
-        <div class="label">Entró</div><div class="value">${fmt(r.nomina.neto)}</div>
+        <div class="label">Entró${r.entradas.length > 1 ? ` · ${r.entradas.length} ingresos` : ''}</div>
+        <div class="value">${fmt(r.entrado)}</div>
       </div>` : ''}
     ${r.porHucha.length ? `
       <div class="sheet-group">
