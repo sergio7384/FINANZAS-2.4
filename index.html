@@ -148,6 +148,11 @@
     color:var(--text); font-size:15px; font-weight:600; padding:13px 14px; font-family:inherit; margin-bottom:14px;
   }
   .sheet-note:focus{ outline:none; border-color:var(--blue); }
+  .sheet-group{ margin-bottom:18px; }
+  .sheet-group__title{
+    font-size:11px; font-weight:800; letter-spacing:0.07em; text-transform:uppercase;
+    color:var(--text-dim); margin-bottom:10px;
+  }
   .sheet-note::placeholder{ color:var(--text-faint); font-weight:500; }
 
   /* ---------- Toast de deshacer (flota sobre la nav inferior) ---------- */
@@ -342,6 +347,28 @@
   .streak.hidden{ display:none; }
   @keyframes streakIn{ from{ opacity:0; transform:scale(0.8) translateY(-4px);} to{ opacity:1; transform:scale(1) translateY(0);} }
 
+  /* botón morado en la cabecera de una box (abre la distribución) */
+  .head-btn{
+    margin-left:auto; flex-shrink:0; border:1px solid rgba(139,124,250,0.4);
+    background:rgba(139,124,250,0.16); color:#B9AEFF; font-family:inherit;
+    border-radius:100px; padding:7px 13px; font-size:12px; font-weight:800;
+    display:flex; align-items:center; gap:6px; letter-spacing:-0.01em;
+    transition:transform 180ms var(--spring), background 200ms;
+  }
+  .head-btn svg{ width:13px; height:13px; }
+  .head-btn:active{ transform:scale(0.92); background:rgba(139,124,250,0.28); }
+
+  /* reparto a huchas dentro de cada tarjeta de banco */
+  .bank-split{ margin-top:12px; padding-top:11px; border-top:1px solid var(--border); display:flex; flex-direction:column; gap:7px; }
+  .bank-split__row{ display:flex; align-items:center; gap:8px; }
+  .bank-split__dot{ width:7px; height:7px; border-radius:50%; flex-shrink:0; }
+  .bank-split__name{ flex:1; font-size:12.5px; font-weight:600; color:var(--text-dim); }
+  .bank-split__amt{ font-size:12.5px; font-weight:800; color:var(--text); font-variant-numeric:tabular-nums; }
+  /* lo que pasa por la cuenta pero no aterriza en ninguna hucha */
+  .bank-split__row.pasa .bank-split__name,
+  .bank-split__row.pasa .bank-split__amt{ color:var(--text-faint); font-weight:600; }
+  .bank-split__tag{ font-size:10px; font-weight:700; color:var(--text-faint); letter-spacing:0.02em; }
+
   /* cabecera de Huchas: a la izquierda las tuyas, a la derecha la conjunta */
   .hucha-split{ display:flex; align-items:stretch; border-radius:20px; padding:15px 8px; }
   .hucha-half{ flex:1; display:flex; flex-direction:column; align-items:center; gap:4px; text-align:center; }
@@ -523,7 +550,7 @@
    a las diez, la décima sube sola (2.49 -> 2.5). Tiene que coincidir con
    la de package.json y con la del nombre de caché de sw.js: hay un
    comprobador en scripts/check-version.mjs que lo verifica. */
-const APP_VERSION = '2.51';
+const APP_VERSION = '2.52';
 
 /* ============ ICONS ============ */
 const ICONS = {
@@ -1025,7 +1052,10 @@ function renderResumen(){
   const last = state.historial[0] || null;
   el.innerHTML = `
     <div class="card">
-      <div class="card-head"><div class="icon" style="background:${'#3D8BFD'}">${ICONS.wallet}</div><span>Ingresos</span></div>
+      <div class="card-head">
+        <div class="icon" style="background:${'#3D8BFD'}">${ICONS.wallet}</div><span>Ingresos</span>
+        <button type="button" class="head-btn" id="btnDistribucion">${ICONS.trend}Distribución</button>
+      </div>
       <div class="row">
         <div class="label">Sueldo base</div>
         <input class="amount" inputmode="decimal" id="in-base" value="${state.ingresos.base}">
@@ -1042,22 +1072,6 @@ function renderResumen(){
       ${last ? `<div class="hint" style="text-align:left; margin-top:8px;">${deltaBadge(n, last.neto)} <span style="color:var(--text-faint)">vs ${last.label.toLowerCase()}</span></div>` : ''}
     </div>
 
-    <div class="card">
-      <div class="card-head"><div class="icon" style="background:${'#8B7CFA'}">${ICONS.trend}</div><span>Distribución principal</span></div>
-      ${sliderRow('gastos','Gastos fijos', state.distPct.gastos, d.gastos, '#3D8BFD', last?last.dist.gastos:null)}
-      ${sliderRow('ahorro','Ahorro', state.distPct.ahorro, d.ahorro, '#34D399', last?last.dist.ahorro:null)}
-      ${sliderRow('ocio','Ocio', state.distPct.ocio, d.ocio, '#FBAE3C', last?last.dist.ocio:null)}
-      <div class="hint">Total: 100% · Desliza para ajustar, los demás se reparten automáticamente</div>
-    </div>
-
-    <div class="card">
-      <div class="card-head"><div class="icon" style="background:${'#FBAE3C'}">${ICONS.spark}</div><span>Desglose de ocio</span></div>
-      ${sliderRow('libre','Ocio libre', state.ocioPct.libre, o.libre, '#FBAE3C')}
-      ${sliderRow('coche','Coche', state.ocioPct.coche, o.coche, '#FBAE3C', last&&last.aportadoHuchas?last.aportadoHuchas.coche:null)}
-      ${sliderRow('caprichos','Caprichos', state.ocioPct.caprichos, o.caprichos, '#FBAE3C', last&&last.aportadoHuchas?last.aportadoHuchas.caprichos:null)}
-      <div class="hint">Total: 100% · Desliza para ajustar, los demás se reparten automáticamente</div>
-    </div>
-
     <div style="margin:20px 2px 10px; font-size:12px; font-weight:700; letter-spacing:0.06em; color:var(--text-dim); text-transform:uppercase;">Distribución bancaria</div>
     ${BANKS.map(bk=>`
       <div class="card bank-card">
@@ -1067,6 +1081,7 @@ function renderResumen(){
         </div>
         <div class="amount" data-val="${b[bk.key]}">${fmt(b[bk.key])}</div>
         <div class="detail">${bankDetail(bk.key, d, b)}</div>
+        ${bankSplit(bk.key, d, o)}
       </div>
     `).join('')}
 
@@ -1083,11 +1098,52 @@ function renderResumen(){
     });
   });
 
-  wireSliderGroup(state.distPct, ['gastos','ahorro','ocio'], renderResumen);
-  wireSliderGroup(state.ocioPct, ['libre','coche','caprichos'], renderResumen);
+  // Los sliders ya no viven aquí: se abren desde el botón de la cabecera.
+  document.getElementById('btnDistribucion')
+    .addEventListener('click', ()=> renderDistribucionSheet());
 
   document.getElementById('btnGuardar').addEventListener('click', guardarNomina);
   updateStreakBadge();
+}
+
+/* Qué parte del dinero de cada cuenta acaba en cada hucha. Sale del mismo
+   reparto que aplica guardarNomina, para que lo que se enseña aquí sea
+   exactamente lo que luego se suma a las huchas.
+   Las líneas marcadas "pasa" cruzan la cuenta pero no aterrizan en ninguna
+   hucha; van listadas igual para que los números cuadren con el total. */
+function bankBreakdown(key, d, o){
+  const casa = parseFloat(state.ingresos.deduccionCasa) || 0;
+  const conj = parseFloat(state.ingresos.deduccionConjunta) || 0;
+  if(key === 'ibercaja') return [
+    { bucket:'gastos', amount:d.gastos },
+    { label:'Deducción casa', amount:casa, pasa:true },
+  ];
+  if(key === 'revolut') return [
+    { bucket:'ocio', amount:o.libre },
+    { bucket:'coche', amount:o.coche },
+    { bucket:'caprichos', amount:o.caprichos },
+    { bucket:'conjunta', amount:conj },
+  ];
+  if(key === 'traderepublic') return [
+    { bucket:'ahorro', amount:d.ahorro },
+  ];
+  return [];
+}
+
+function bankSplit(key, d, o){
+  const filas = bankBreakdown(key, d, o).filter(f=> f.amount > 0);
+  if(filas.length === 0) return '';
+  return `<div class="bank-split">` + filas.map(f=>{
+    const b = f.bucket ? BUCKETS.find(x=>x.key===f.bucket) : null;
+    const color = b ? b.color : 'var(--text-faint)';
+    const nombre = b ? b.name : f.label;
+    return `
+      <div class="bank-split__row${f.pasa ? ' pasa' : ''}">
+        <span class="bank-split__dot" style="background:${color}"></span>
+        <span class="bank-split__name">${nombre}${f.pasa ? ' <span class="bank-split__tag">· sale de la cuenta</span>' : ''}</span>
+        <span class="bank-split__amt">${fmt(f.amount)}</span>
+      </div>`;
+  }).join('') + `</div>`;
 }
 
 function bankDetail(key, d, b){
@@ -1163,6 +1219,12 @@ function refreshResumenNumbers(activeKey){
     const detEl = card.querySelector('.detail');
     if(amtEl) animateNumber(amtEl, b[bk.key]);
     if(detEl) detEl.textContent = bankDetail(bk.key, d, b);
+    // El reparto a huchas depende de los mismos números, así que se repinta
+    // a la vez; si no, se queda con las cifras de antes de escribir.
+    const splitEl = card.querySelector('.bank-split');
+    const splitHtml = bankSplit(bk.key, d, o);
+    if(splitEl) splitEl.outerHTML = splitHtml;
+    else if(splitHtml && detEl) detEl.insertAdjacentHTML('afterend', splitHtml);
   });
 }
 
@@ -1777,6 +1839,43 @@ function renderGastoSheet(prevAmount, prevConcepto){
     avisoGastoRegistrado(g);
   });
   setTimeout(()=>{ const i=document.getElementById('gastoAmount'); if(i) i.focus(); }, 380);
+}
+
+/* --- Distribución: los sliders salen del Resumen a un panel propio --- */
+/* Los sliders se re-renderizan solos al soltar (wireSliderGroup rerender),
+   así que dentro del panel tienen que repintar el panel, no el Resumen. */
+function renderDistribucionSheet(){
+  const d = distAmounts(), o = ocioAmounts();
+  const last = state.historial[0] || null;
+  openSheet(`
+    <h2>Distribución</h2>
+    <div class="hint" style="text-align:left; margin:-8px 0 16px;">Sobre un sueldo neto de <b style="color:var(--text)">${fmt(neto())}</b></div>
+
+    <div class="sheet-group">
+      <div class="sheet-group__title">Distribución principal</div>
+      ${sliderRow('gastos','Gastos fijos', state.distPct.gastos, d.gastos, '#3D8BFD', last?last.dist.gastos:null)}
+      ${sliderRow('ahorro','Ahorro', state.distPct.ahorro, d.ahorro, '#34D399', last?last.dist.ahorro:null)}
+      ${sliderRow('ocio','Ocio', state.distPct.ocio, d.ocio, '#FBAE3C', last?last.dist.ocio:null)}
+    </div>
+
+    <div class="sheet-group">
+      <div class="sheet-group__title">Desglose de ocio</div>
+      ${sliderRow('libre','Ocio libre', state.ocioPct.libre, o.libre, '#FBAE3C')}
+      ${sliderRow('coche','Coche', state.ocioPct.coche, o.coche, '#FBAE3C', last&&last.aportadoHuchas?last.aportadoHuchas.coche:null)}
+      ${sliderRow('caprichos','Caprichos', state.ocioPct.caprichos, o.caprichos, '#FBAE3C', last&&last.aportadoHuchas?last.aportadoHuchas.caprichos:null)}
+    </div>
+
+    <div class="hint" style="margin-bottom:14px;">Cada grupo suma 100% · Desliza para ajustar, los demás se reparten automáticamente</div>
+    <button class="btn" id="btnCerrarDist">${ICONS.check}Hecho</button>
+  `);
+  wireSliderGroup(state.distPct, ['gastos','ahorro','ocio'], renderDistribucionSheet);
+  wireSliderGroup(state.ocioPct, ['libre','coche','caprichos'], renderDistribucionSheet);
+  document.getElementById('btnCerrarDist').addEventListener('click', ()=>{
+    closeSheet();
+    // El Resumen enseña las cifras de los bancos y su reparto, que dependen
+    // de lo que se acabe de tocar aquí.
+    if(activeTab === 'resumen') renderResumen();
+  });
 }
 
 /* --- Cribar sobras: repartir lo que sobró del mes entre las huchas --- */
