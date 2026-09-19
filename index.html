@@ -396,6 +396,19 @@
   .gasto-row__meta{ font-size:11px; color:var(--text-faint); margin-top:2px; text-transform:capitalize; }
   .gasto-row__amount{ font-size:13.5px; font-weight:800; color:var(--red); flex-shrink:0; font-variant-numeric:tabular-nums; }
   .gasto-total{ font-size:13px; font-weight:800; color:var(--red); font-variant-numeric:tabular-nums; }
+  /* la cabecera entera es el boton que pliega y despliega */
+  .gasto-head{ width:100%; border:0; background:transparent; font-family:inherit; text-align:left;
+    padding:0; margin-bottom:10px; transition:opacity 200ms; }
+  .gasto-head:active{ opacity:0.6; }
+  .gasto-chevron{ display:flex; align-items:center; color:var(--text-faint); transition:transform 320ms var(--spring); }
+  .gasto-chevron svg{ width:15px; height:15px; }
+  .gasto-chevron.abierto{ transform:rotate(180deg); }
+  .gasto-pie{ text-align:center; font-size:11.5px; font-weight:600; color:var(--text-faint); padding-top:11px; margin-top:2px; border-top:1px solid var(--border); }
+  /* separador de mes dentro del libro desplegado */
+  .gasto-mes{ display:flex; align-items:baseline; gap:8px; margin:16px 0 2px; }
+  .gasto-mes:first-of-type{ margin-top:4px; }
+  .gasto-mes__titulo{ flex:1; font-size:10.5px; font-weight:800; letter-spacing:0.07em; color:var(--text-dim); text-transform:uppercase; }
+  .gasto-mes__total{ font-size:11.5px; font-weight:800; color:var(--text-faint); font-variant-numeric:tabular-nums; }
 
   /* ---------- Acceso (Firebase Auth) ---------- */
   .auth-gate{
@@ -550,7 +563,7 @@
    a las diez, la décima sube sola (2.49 -> 2.5). Tiene que coincidir con
    la de package.json y con la del nombre de caché de sw.js: hay un
    comprobador en scripts/check-version.mjs que lo verifica. */
-const APP_VERSION = '2.52';
+const APP_VERSION = '2.53';
 
 /* ============ ICONS ============ */
 const ICONS = {
@@ -570,6 +583,7 @@ const ICONS = {
   heart:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20.8 4.6a5.5 5.5 0 0 0-7.8 0L12 5.6l-1-1a5.5 5.5 0 0 0-7.8 7.8l1 1L12 21l7.8-7.6 1-1a5.5 5.5 0 0 0 0-7.8z"/></svg>',
   car:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 13l1.5-4.5A2 2 0 0 1 6.4 7h11.2a2 2 0 0 1 1.9 1.5L21 13"/><rect x="3" y="13" width="18" height="6" rx="2"/><circle cx="7.5" cy="19" r="1.4"/><circle cx="16.5" cy="19" r="1.4"/></svg>',
   bolt:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M13 2 4 14h6l-1 8 9-12h-6l1-8z"/></svg>',
+  chevron:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M6 9l6 6 6-6"/></svg>',
 };
 const BANKS = [
   {key:'ibercaja', name:'Ibercaja', icon:'wallet', color:'#3D8BFD'},
@@ -578,13 +592,16 @@ const BANKS = [
 ];
 
 /* Single source of truth for every pot/bucket tracked by the app */
+/* El orden manda en toda la app: los chips del gasto rápido, las tarjetas
+   de Huchas y el desglose del historial se pintan siguiendo esta lista.
+   Va de lo que más se toca a lo que menos. */
 const BUCKETS = [
-  {key:'ahorro',    name:'Ahorro',       color:'#34D399', icon:'piggy'},
-  {key:'coche',     name:'Coche',        color:'#3D8BFD', icon:'car'},
-  {key:'caprichos', name:'Caprichos',    color:'#FBAE3C', icon:'spark'},
-  {key:'ocio',      name:'Ocio libre',   color:'#8B7CFA', icon:'bolt'},
   {key:'gastos',    name:'Gastos',       color:'#2DD4BF', icon:'wallet'},
+  {key:'ocio',      name:'Ocio libre',   color:'#8B7CFA', icon:'bolt'},
   {key:'conjunta',  name:'Conjunta',     color:'#F472B6', icon:'heart'},
+  {key:'caprichos', name:'Caprichos',    color:'#FBAE3C', icon:'spark'},
+  {key:'coche',     name:'Coche',        color:'#3D8BFD', icon:'car'},
+  {key:'ahorro',    name:'Ahorro',       color:'#34D399', icon:'piggy'},
 ];
 /* La criba de sobras solo reparte entre estas tres */
 const CRIBA_BUCKETS = BUCKETS.filter(b=> ['ahorro','coche','caprichos'].includes(b.key));
@@ -809,14 +826,36 @@ document.getElementById('googleSignInBtn').addEventListener('click', async ()=>{
     err.textContent = 'No se pudo iniciar sesión (' + e.code + ').';
   }
 });
-document.getElementById('accountBtn').addEventListener('click', ()=>{
+/* Panel de cuenta: la copia de seguridad vive aquí desde que salió de
+   Historial, junto a la sesión y la versión cargada. */
+document.getElementById('accountBtn').addEventListener('click', ()=> renderCuentaSheet());
+
+function renderCuentaSheet(){
   const cuenta = (currentUser && currentUser.email) || 'esta cuenta';
-  // La versión se enseña aquí para poder comprobar de un vistazo si el
-  // móvil ya tiene cargada la última publicada.
-  openAlert('👋', 'Cerrar sesión',
-    `Sesión iniciada como ${cuenta}. ¿Cerrarla en este dispositivo?<br><br><span style="opacity:0.55; font-size:12px;">Finanzas ${APP_VERSION}</span>`,
-    ()=>{ auth.signOut(); });
-});
+  openSheet(`
+    <h2>Tu cuenta</h2>
+    <div class="hint" style="text-align:left; margin:-8px 0 16px;">Sesión iniciada como <b style="color:var(--text)">${escapeHtml(cuenta)}</b></div>
+
+    <div class="sheet-group">
+      <div class="sheet-group__title">Copia de seguridad</div>
+      <div style="display:flex; gap:10px;">
+        <button class="btn ghost" id="btnExport" style="margin:0; flex:1;">${ICONS.download}Exportar</button>
+        <button class="btn ghost" id="btnImport" style="margin:0; flex:1;">${ICONS.upload}Importar</button>
+      </div>
+      <input type="file" id="fileImport" accept="application/json" style="display:none;">
+    </div>
+
+    <button class="btn danger" id="btnSignOut" style="margin-top:4px;">Cerrar sesión</button>
+    <div class="hint" style="margin-top:12px;">Finanzas ${APP_VERSION}</div>
+  `);
+  wireToolbar();
+  document.getElementById('btnSignOut').addEventListener('click', ()=>{
+    closeSheet();
+    openAlert('👋', 'Cerrar sesión',
+      `¿Cerrar la sesión de ${escapeHtml(cuenta)} en este dispositivo?`,
+      ()=>{ auth.signOut(); });
+  });
+}
 
 /* Si hay un finanzas-state antiguo en este navegador (de antes de tener
    cuenta) y el documento de Firestore todavía está vacío, se sube una
@@ -1459,19 +1498,11 @@ let deleteArmedIdx = null;
 function renderHistorial(){
   const el = document.getElementById('view-historial');
 
-  const toolbar = `
-    <div class="card" style="display:flex; gap:10px;">
-      <button class="btn ghost" id="btnExport" style="margin:0; width:auto; flex:1;">${ICONS.download}Exportar</button>
-      <button class="btn ghost" id="btnImport" style="margin:0; width:auto; flex:1;">${ICONS.upload}Importar</button>
-      <input type="file" id="fileImport" accept="application/json" style="display:none;">
-    </div>
-  `;
-
+  // Exportar/Importar viven ahora en el panel de cuenta (foto de perfil).
   const libro = renderLibroGastos();
 
   if(state.historial.length===0){
-    el.innerHTML = toolbar + libro + `<div class="empty">Todavía no has guardado ninguna nómina.<br>Guárdala desde Resumen para verla aquí.</div>`;
-    wireToolbar();
+    el.innerHTML = libro + `<div class="empty">Todavía no has guardado ninguna nómina.<br>Guárdala desde Resumen para verla aquí.</div>`;
     wireLibroGastos();
     return;
   }
@@ -1483,7 +1514,7 @@ function renderHistorial(){
     </div>
   ` : '';
 
-  el.innerHTML = toolbar + libro + chart + state.historial.map((h,i)=>{
+  el.innerHTML = libro + chart + state.historial.map((h,i)=>{
     const isEditing = editingIdx === i;
     const ah = h.aportadoHuchas || {ahorro:0,coche:0,caprichos:0};
     return `
@@ -1518,7 +1549,6 @@ function renderHistorial(){
     </div>
   `}).join('');
 
-  wireToolbar();
   wireLibroGastos();
 
   el.querySelectorAll('[data-act]').forEach(btn=>{
@@ -1543,38 +1573,81 @@ function renderHistorial(){
   });
 }
 
-/* Últimos gastos rápidos registrados, con su botón de deshacer. Se limita
-   a los más recientes para que la pestaña no se vuelva infinita. */
-const LIBRO_VISIBLE = 12;
+/* Libro de gastos en Historial: de primeras solo los 3 últimos, y al
+   pulsar la cabecera se despliegan todos agrupados por mes. */
+const LIBRO_PREVIO = 3;
+let libroAbierto = false;
+
+/* Mismo formato que las etiquetas del historial de nóminas, para que los
+   dos apartados de la pestaña hablen igual. */
+function etiquetaMesDe(iso){
+  const d = new Date(iso);
+  if(isNaN(d.getTime())) return 'Sin fecha';
+  return `${monthNames[d.getMonth()]} DE ${d.getFullYear()}`;
+}
+
+const importeGasto = g => (g.descontado != null ? g.descontado : g.importe);
+
+function filaGasto(g){
+  const b = BUCKETS.find(x=>x.key===g.bucket);
+  const d = new Date(g.date);
+  const dia = isNaN(d.getTime()) ? '' : d.toLocaleDateString('es-ES',{day:'2-digit', month:'short'});
+  return `
+    <div class="gasto-row">
+      <span class="gasto-row__dot" style="background:${b ? b.color : '#888'}"></span>
+      <div class="gasto-row__main">
+        <div class="gasto-row__title">${escapeHtml(g.concepto) || (b ? b.name : g.bucket)}</div>
+        <div class="gasto-row__meta">${dia}${b ? ' · ' + b.name : ''}</div>
+      </div>
+      <div class="gasto-row__amount">−${fmt(importeGasto(g))}</div>
+      <button class="icon-btn del" data-undo="${g.id}" aria-label="Deshacer gasto">${ICONS.trash}</button>
+    </div>`;
+}
+
+/* Agrupa manteniendo el orden en que están (del más nuevo al más viejo),
+   así los meses salen del más reciente hacia atrás sin tener que ordenar. */
+function agruparPorMes(gastos){
+  const meses = [];
+  for(const g of gastos){
+    const etiqueta = etiquetaMesDe(g.date);
+    const ultimo = meses[meses.length - 1];
+    if(ultimo && ultimo.etiqueta === etiqueta) ultimo.gastos.push(g);
+    else meses.push({ etiqueta, gastos:[g] });
+  }
+  return meses;
+}
+
 function renderLibroGastos(){
   const gastos = Array.isArray(state.gastos) ? state.gastos : [];
   if(gastos.length === 0) return '';
-  const importeDe = g => (g.descontado != null ? g.descontado : g.importe);
-  const total = gastos.reduce((s,g)=> s + importeDe(g), 0);
-  const filas = gastos.slice(0, LIBRO_VISIBLE).map(g=>{
-    const b = BUCKETS.find(x=>x.key===g.bucket);
-    const d = new Date(g.date);
-    const fecha = isNaN(d.getTime()) ? '' : d.toLocaleDateString('es-ES',{day:'2-digit', month:'short'});
-    return `
-      <div class="gasto-row">
-        <span class="gasto-row__dot" style="background:${b ? b.color : '#888'}"></span>
-        <div class="gasto-row__main">
-          <div class="gasto-row__title">${escapeHtml(g.concepto) || (b ? b.name : g.bucket)}</div>
-          <div class="gasto-row__meta">${fecha}${b ? ' · ' + b.name : ''}</div>
+  const total = gastos.reduce((s,g)=> s + importeGasto(g), 0);
+
+  const cuerpo = libroAbierto
+    ? agruparPorMes(gastos).map(m=>`
+        <div class="gasto-mes">
+          <div class="gasto-mes__titulo">${m.etiqueta}</div>
+          <div class="gasto-mes__total">${fmt(m.gastos.reduce((s,g)=> s + importeGasto(g), 0))}</div>
         </div>
-        <div class="gasto-row__amount">−${fmt(importeDe(g))}</div>
-        <button class="icon-btn del" data-undo="${g.id}" aria-label="Deshacer gasto">${ICONS.trash}</button>
-      </div>`;
-  }).join('');
-  const resto = gastos.length > LIBRO_VISIBLE
-    ? `<div class="hint" style="margin-top:10px;">y ${gastos.length - LIBRO_VISIBLE} más</div>` : '';
+        ${m.gastos.map(filaGasto).join('')}
+      `).join('')
+    : gastos.slice(0, LIBRO_PREVIO).map(filaGasto).join('');
+
+  const restantes = gastos.length - LIBRO_PREVIO;
+  const pie = libroAbierto
+    ? `<div class="gasto-pie">Toca para plegar</div>`
+    : (restantes > 0 ? `<div class="gasto-pie">Toca para ver los ${gastos.length} gastos por meses</div>` : '');
+
   return `
     <div class="card">
-      <div class="card-head">
-        <div class="icon" style="background:#FF5A5F">${ICONS.minus}</div><span>Gastos rápidos</span>
-        <div class="card-actions"><span class="gasto-total">${fmt(total)}</span></div>
-      </div>
-      ${filas}${resto}
+      <button type="button" class="card-head gasto-head" id="libroToggle"
+              aria-expanded="${libroAbierto}" aria-label="Ver todos los gastos">
+        <div class="icon" style="background:#FF5A5F">${ICONS.minus}</div><span>Gastos</span>
+        <div class="card-actions">
+          <span class="gasto-total">${fmt(total)}</span>
+          <span class="gasto-chevron ${libroAbierto ? 'abierto' : ''}">${ICONS.chevron}</span>
+        </div>
+      </button>
+      ${cuerpo}${pie}
     </div>`;
 }
 
@@ -1588,6 +1661,13 @@ function wireLibroGastos(){
   document.querySelectorAll('[data-undo]').forEach(btn=>{
     btn.addEventListener('click', ()=> deshacerGasto(btn.dataset.undo));
   });
+  const toggle = document.getElementById('libroToggle');
+  if(toggle){
+    toggle.addEventListener('click', ()=>{
+      libroAbierto = !libroAbierto;
+      renderHistorial();
+    });
+  }
 }
 
 function wireToolbar(){
@@ -1663,7 +1743,10 @@ function importData(e){
       save();
       updateStreakBadge();
       updateQuickStats();
-      renderHistorial();
+      // Se importa desde el panel de cuenta, que puede estar abierto sobre
+      // cualquier pestaña: se cierra y se repinta la que esté activa.
+      closeSheet();
+      if(renderers[activeTab]) renderers[activeTab]();
     }catch(err){ alert('El archivo no es un backup válido de Finanzas.'); }
   };
   reader.readAsText(file);
@@ -1802,7 +1885,8 @@ function avisoGastoRegistrado(g){
 }
 
 /* --- Gasto rápido: restar de una hucha al momento --- */
-let sheetSelectedBucket = 'ahorro';
+// Arranca en la primera del orden de BUCKETS, que es la que mas se usa.
+let sheetSelectedBucket = BUCKETS[0].key;
 function renderGastoSheet(prevAmount, prevConcepto){
   const chips = BUCKETS.map(b=>`
     <button class="bucket-chip ${b.key===sheetSelectedBucket?'active':''}" data-bucket="${b.key}">
