@@ -1,0 +1,30 @@
+// Reglas de seguridad de Firestore para finanzas-sergio-179c3.
+//
+// La apiKey que hay en index.html no es un secreto: viaja al navegador de
+// cualquiera que abra la app. Lo unico que protege los datos son estas
+// reglas, asi que viven aqui, versionadas, y no solo en la consola.
+//
+// Para aplicarlas:
+//   Firebase console -> Firestore Database -> Reglas -> pegar y publicar.
+//   O con la CLI: firebase deploy --only firestore:rules
+//
+// Regla de oro: cada persona solo puede tocar su propio documento
+// users/{uid}. Todo lo demas esta cerrado por defecto.
+
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    match /users/{uid} {
+      allow read, write: if request.auth != null
+                         && request.auth.uid == uid;
+    }
+
+    // Cualquier otra ruta queda cerrada, incluida la creacion de
+    // colecciones nuevas desde el cliente.
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

@@ -143,6 +143,30 @@
     color:var(--text); font-size:26px; font-weight:800; text-align:center; padding:16px; font-family:inherit; margin-bottom:14px;
   }
   .sheet-amount:focus{ outline:none; border-color:var(--blue); }
+  .sheet-note{
+    width:100%; background:rgba(255,255,255,0.06); border:1px solid var(--glass-border-soft); border-radius:14px;
+    color:var(--text); font-size:15px; font-weight:600; padding:13px 14px; font-family:inherit; margin-bottom:14px;
+  }
+  .sheet-note:focus{ outline:none; border-color:var(--blue); }
+  .sheet-note::placeholder{ color:var(--text-faint); font-weight:500; }
+
+  /* ---------- Toast de deshacer (flota sobre la nav inferior) ---------- */
+  .toast{
+    position:fixed; left:16px; right:16px; bottom:calc(var(--safe-bottom) + 86px); z-index:80;
+    max-width:488px; margin:0 auto; border-radius:18px; padding:12px 14px;
+    display:flex; align-items:center; gap:12px;
+    transform:translateY(160%); opacity:0; pointer-events:none;
+    transition:transform 460ms var(--spring), opacity 240ms var(--ease);
+  }
+  .toast.open{ transform:translateY(0); opacity:1; pointer-events:auto; }
+  .toast__text{ flex:1; font-size:13px; font-weight:600; color:var(--text); line-height:1.35; }
+  .toast__undo{
+    flex-shrink:0; border:1px solid var(--glass-border-soft); background:rgba(255,255,255,0.1); color:var(--text);
+    border-radius:100px; padding:8px 15px; font-size:12.5px; font-weight:800; font-family:inherit;
+    transition:transform 160ms var(--spring);
+  }
+  .toast__undo:active{ transform:scale(0.9); }
+  .toast__undo.hidden{ display:none; }
 
   /* ---------- Centered alert popup ---------- */
   .alert-overlay{
@@ -324,6 +348,16 @@
 
   .empty{ text-align:center; padding:36px 12px; color:var(--text-faint); font-size:14px; }
 
+  /* filas del libro de gastos rápidos */
+  .gasto-row{ display:flex; align-items:center; gap:10px; padding:10px 0; border-bottom:1px solid var(--border); }
+  .gasto-row:last-of-type{ border-bottom:0; }
+  .gasto-row__dot{ width:8px; height:8px; border-radius:50%; flex-shrink:0; }
+  .gasto-row__main{ flex:1; min-width:0; }
+  .gasto-row__title{ font-size:13.5px; font-weight:700; color:var(--text); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .gasto-row__meta{ font-size:11px; color:var(--text-faint); margin-top:2px; text-transform:capitalize; }
+  .gasto-row__amount{ font-size:13.5px; font-weight:800; color:var(--red); flex-shrink:0; font-variant-numeric:tabular-nums; }
+  .gasto-total{ font-size:13px; font-weight:800; color:var(--red); font-variant-numeric:tabular-nums; }
+
   /* ---------- Acceso (Firebase Auth) ---------- */
   .auth-gate{
     position:fixed; inset:0; z-index:100; display:flex; flex-direction:column;
@@ -447,6 +481,11 @@
   <div class="sheet glass" id="sheet"></div>
 </div>
 
+<div class="toast glass" id="toast">
+  <div class="toast__text" id="toastText"></div>
+  <button class="toast__undo" id="toastUndo" type="button">Deshacer</button>
+</div>
+
 <div class="alert-overlay" id="alertOverlay">
   <div class="alert-box glass" id="alertBox"></div>
 </div>
@@ -513,6 +552,9 @@ let state = {
   huchas: Object.fromEntries(BUCKETS.map(b=>[b.key,0])),
   metas: Object.fromEntries(BUCKETS.map(b=>[b.key,0])),
   historial: [],
+  /* Libro de gastos rapidos: cada descuento de una hucha queda registrado
+     aqui con importe, hucha y fecha, para poder revisarlo y deshacerlo. */
+  gastos: [],
 };
 
 const monthNames = ['ENERO','FEBRERO','MARZO','ABRIL','MAYO','JUNIO','JULIO','AGOSTO','SEPTIEMBRE','OCTUBRE','NOVIEMBRE','DICIEMBRE'];
@@ -541,6 +583,11 @@ const auth = firebase.auth();
 const db = firebase.firestore();
 let currentUser = null;
 
+/* Identifica a esta pestaña/dispositivo. Sirve para que el listener de
+   Firestore pueda ignorar el eco de sus propias escrituras y repintar
+   solo cuando el cambio viene de otro sitio. */
+const CLIENT_ID = 'c' + Date.now().toString(36) + Math.random().toString(36).slice(2,8);
+
 /* window.storage: mismo contrato get/set que ya esperaban save()/load()
    de más abajo, pero respaldado por el documento Firestore del usuario
    que ha iniciado sesión, en vez de localStorage. No hace falta tocar
@@ -558,9 +605,73 @@ window.storage = {
   async set(key, jsonString){
     if(!currentUser) return;
     const value = JSON.parse(jsonString);
-    await db.collection('users').doc(currentUser.uid).set({ [key]: value }, { merge:true });
+    await db.collection('users').doc(currentUser.uid).set({
+      [key]: value,
+      _writer: CLIENT_ID,
+      _updatedAt: firebase.firestore.FieldValue.serverTimestamp(),
+    }, { merge:true });
   },
 };
+
+/* ---------- Sincronización en tiempo real ----------
+   Sin esto, abrir la app en el móvil y en el portátil hacía que el último
+   en guardar pisara al otro sin avisar. Ahora cada cambio remoto entra en
+   caliente, salvo que sea el eco de nuestra propia escritura. */
+let unsubscribeRemoto = null;
+let repintadoPendiente = false;
+
+function escucharCambiosRemotos(){
+  if(unsubscribeRemoto || !currentUser) return;
+  // Al suscribirse, Firestore entrega de entrada el documento actual, que es
+  // justo lo que load() acaba de leer. Esa primera entrega se ignora para no
+  // avisar de un cambio que no ha habido.
+  let primerSnapshot = true;
+  unsubscribeRemoto = db.collection('users').doc(currentUser.uid).onSnapshot(snap=>{
+    const esElPrimero = primerSnapshot;
+    primerSnapshot = false;
+    if(esElPrimero) return;
+    if(!snap.exists || snap.metadata.hasPendingWrites) return;
+    const data = snap.data() || {};
+    if(data._writer === CLIENT_ID) return;
+    const remoto = data['finanzas-state'];
+    if(!remoto) return;
+    // Aunque venga de otro dispositivo, si el contenido es el mismo no hay
+    // nada que repintar ni de lo que avisar.
+    if(JSON.stringify(mergeState(remoto)) === JSON.stringify(state)) return;
+    state = mergeState(remoto);
+    repintarDesdeRemoto();
+  }, ()=>{ /* sin red o sin permisos: la app sigue con el estado local */ });
+}
+
+function pararEscuchaRemota(){
+  if(unsubscribeRemoto){ unsubscribeRemoto(); unsubscribeRemoto = null; }
+}
+
+/* No se repinta encima de alguien que está escribiendo o con un panel
+   abierto: se deja pendiente y se pinta en cuanto suelta. */
+function hayEdicionEnCurso(){
+  const a = document.activeElement;
+  if(a && (a.tagName === 'INPUT' || a.tagName === 'TEXTAREA')) return true;
+  const sheet = document.getElementById('sheetOverlay');
+  const alerta = document.getElementById('alertOverlay');
+  return !!(sheet && sheet.classList.contains('open')) || !!(alerta && alerta.classList.contains('open'));
+}
+
+function repintarDesdeRemoto(){
+  if(hayEdicionEnCurso()){ repintadoPendiente = true; return; }
+  repintadoPendiente = false;
+  updateQuickStats();
+  updateStreakBadge();
+  if(renderers[activeTab]) renderers[activeTab]();
+  showToast('Datos actualizados desde otro dispositivo', null, 3500);
+}
+
+document.addEventListener('focusout', ()=>{
+  if(!repintadoPendiente) return;
+  // Pequeña espera: al saltar de un campo a otro, focusout llega antes
+  // que el focusin del siguiente y repintaría en mitad del salto.
+  setTimeout(()=>{ if(repintadoPendiente) repintarDesdeRemoto(); }, 200);
+});
 
 /* ---------- Pantalla de acceso ---------- */
 function showAuthGate(err){
@@ -681,23 +792,54 @@ auth.onAuthStateChanged(async user=>{
     paintAccountBtn(user);
     hideAuthGate();
     await migrarLocalStorageSiHaceFalta();
-    if(!appIniciada){ appIniciada = true; iniciarApp(); }
+    if(!appIniciada){ appIniciada = true; await iniciarApp(); }
+    escucharCambiosRemotos();
   } else {
+    pararEscuchaRemota();
     currentUser = null;
     showAuthGate();
   }
 });
 
-/* ============ PERSISTENCE (best effort) ============ */
-function save(){
-  try{
-    if(window.storage && window.storage.set){
-      window.storage.set('finanzas-state', JSON.stringify(state)).catch(()=>{});
-    } else if(window.localStorage){
-      localStorage.setItem('finanzas-state', JSON.stringify(state));
-    }
-  }catch(e){}
+/* ============ PERSISTENCE ============ */
+/* El espejo local va por uid: si en el mismo móvil entran dos cuentas, una
+   no puede heredar los datos de la otra. La clave sin uid es la antigua,
+   de antes de que hubiera cuentas, y solo la lee la migración. */
+function claveLocal(){
+  return currentUser ? 'finanzas-state:' + currentUser.uid : 'finanzas-state';
 }
+
+let saveTimer = null;
+let savePendiente = false;
+
+function save(){
+  // Espejo local inmediato: si se va la red o se cierra la app de golpe,
+  // el último estado sigue aquí y load() lo recupera.
+  try{ if(window.localStorage) localStorage.setItem(claveLocal(), JSON.stringify(state)); }catch(e){}
+  if(!(window.storage && window.storage.set)) return;
+  savePendiente = true;
+  clearTimeout(saveTimer);
+  // Arrastrar un slider llama a save() en cada píxel; agrupando las
+  // escrituras se manda una sola a Firestore en vez de cientos.
+  saveTimer = setTimeout(flushSave, 600);
+}
+
+function flushSave(){
+  clearTimeout(saveTimer);
+  if(!savePendiente || !(window.storage && window.storage.set)) return;
+  savePendiente = false;
+  window.storage.set('finanzas-state', JSON.stringify(state)).catch(()=>{
+    // Se deja marcado para que el siguiente save() lo reintente.
+    savePendiente = true;
+    if(typeof showToast === 'function') showToast('Sin conexión: guardado solo en este dispositivo', null, 4000);
+  });
+}
+
+// Al cerrar o mandar la app a segundo plano se vuelca lo que quede pendiente.
+window.addEventListener('pagehide', flushSave);
+document.addEventListener('visibilitychange', ()=>{
+  if(document.visibilityState === 'hidden') flushSave();
+});
 function mergeState(loaded){
   const merged = { ...state, ...loaded };
   merged.ingresos = { ...state.ingresos, ...(loaded.ingresos||{}) };
@@ -706,18 +848,24 @@ function mergeState(loaded){
   merged.huchas = { ...state.huchas, ...(loaded.huchas||{}) };
   merged.metas = { ...state.metas, ...(loaded.metas||{}) };
   merged.historial = loaded.historial || state.historial;
+  merged.gastos = loaded.gastos || state.gastos;
   return merged;
 }
 async function load(){
+  let cargado = null;
   try{
     if(window.storage && window.storage.get){
       const r = await window.storage.get('finanzas-state');
-      if(r && r.value) state = mergeState(JSON.parse(r.value));
-    } else if(window.localStorage){
-      const raw = localStorage.getItem('finanzas-state');
-      if(raw) state = mergeState(JSON.parse(raw));
+      if(r && r.value) cargado = JSON.parse(r.value);
     }
-  }catch(e){}
+  }catch(e){ /* sin red: abajo se tira del espejo local */ }
+  if(!cargado){
+    try{
+      const raw = localStorage.getItem(claveLocal());
+      if(raw) cargado = JSON.parse(raw);
+    }catch(e){}
+  }
+  if(cargado) state = mergeState(cargado);
 }
 
 /* ============ HELPERS ============ */
@@ -996,7 +1144,30 @@ function refreshResumenNumbers(activeKey){
   });
 }
 
+/* Guardar la nomina suma a las huchas, asi que pulsar dos veces el mismo
+   mes duplicaria el dinero. Si ya hay una entrada de este mes se pregunta
+   antes: reemplazar deshace el aporte anterior y vuelve a aplicarlo. */
 function guardarNomina(){
+  const etiqueta = currentMonthLabel();
+  const yaGuardado = state.historial.findIndex(h=> h.label === etiqueta);
+  if(yaGuardado === -1){ aplicarNomina(); return; }
+  openAlert('⚠️', 'Ya guardaste ' + etiqueta.toLowerCase(),
+    'Si la guardas otra vez se duplicaría el dinero en las huchas. ¿Quieres reemplazar la nómina de este mes por la de ahora?',
+    ()=>{
+      const previa = state.historial[yaGuardado];
+      // Se devuelve a cada hucha lo que aquella nomina le habia aportado
+      // antes de aplicar la nueva, para que el saldo no se infle.
+      const aportePrevio = previa.aportadoHuchas || {};
+      BUCKETS.forEach(b=>{
+        state.huchas[b.key] = Math.max(0, state.huchas[b.key] - (aportePrevio[b.key] || 0));
+      });
+      state.historial.splice(yaGuardado, 1);
+      aplicarNomina();
+    }
+  );
+}
+
+function aplicarNomina(){
   const d = distAmounts();
   const o = ocioAmounts();
   const conjunta = parseFloat(state.ingresos.deduccionConjunta) || 0;
@@ -1174,9 +1345,12 @@ function renderHistorial(){
     </div>
   `;
 
+  const libro = renderLibroGastos();
+
   if(state.historial.length===0){
-    el.innerHTML = toolbar + `<div class="empty">Todavía no has guardado ninguna nómina.<br>Guárdala desde Resumen para verla aquí.</div>`;
+    el.innerHTML = toolbar + libro + `<div class="empty">Todavía no has guardado ninguna nómina.<br>Guárdala desde Resumen para verla aquí.</div>`;
     wireToolbar();
+    wireLibroGastos();
     return;
   }
 
@@ -1187,7 +1361,7 @@ function renderHistorial(){
     </div>
   ` : '';
 
-  el.innerHTML = toolbar + chart + state.historial.map((h,i)=>{
+  el.innerHTML = toolbar + libro + chart + state.historial.map((h,i)=>{
     const isEditing = editingIdx === i;
     const ah = h.aportadoHuchas || {ahorro:0,coche:0,caprichos:0};
     return `
@@ -1223,6 +1397,7 @@ function renderHistorial(){
   `}).join('');
 
   wireToolbar();
+  wireLibroGastos();
 
   el.querySelectorAll('[data-act]').forEach(btn=>{
     const i = parseInt(btn.dataset.i);
@@ -1243,6 +1418,53 @@ function renderHistorial(){
         saveEditEntry(i);
       }
     });
+  });
+}
+
+/* Últimos gastos rápidos registrados, con su botón de deshacer. Se limita
+   a los más recientes para que la pestaña no se vuelva infinita. */
+const LIBRO_VISIBLE = 12;
+function renderLibroGastos(){
+  const gastos = Array.isArray(state.gastos) ? state.gastos : [];
+  if(gastos.length === 0) return '';
+  const importeDe = g => (g.descontado != null ? g.descontado : g.importe);
+  const total = gastos.reduce((s,g)=> s + importeDe(g), 0);
+  const filas = gastos.slice(0, LIBRO_VISIBLE).map(g=>{
+    const b = BUCKETS.find(x=>x.key===g.bucket);
+    const d = new Date(g.date);
+    const fecha = isNaN(d.getTime()) ? '' : d.toLocaleDateString('es-ES',{day:'2-digit', month:'short'});
+    return `
+      <div class="gasto-row">
+        <span class="gasto-row__dot" style="background:${b ? b.color : '#888'}"></span>
+        <div class="gasto-row__main">
+          <div class="gasto-row__title">${escapeHtml(g.concepto) || (b ? b.name : g.bucket)}</div>
+          <div class="gasto-row__meta">${fecha}${b ? ' · ' + b.name : ''}</div>
+        </div>
+        <div class="gasto-row__amount">−${fmt(importeDe(g))}</div>
+        <button class="icon-btn del" data-undo="${g.id}" aria-label="Deshacer gasto">${ICONS.trash}</button>
+      </div>`;
+  }).join('');
+  const resto = gastos.length > LIBRO_VISIBLE
+    ? `<div class="hint" style="margin-top:10px;">y ${gastos.length - LIBRO_VISIBLE} más</div>` : '';
+  return `
+    <div class="card">
+      <div class="card-head">
+        <div class="icon" style="background:#FF5A5F">${ICONS.minus}</div><span>Gastos rápidos</span>
+        <div class="card-actions"><span class="gasto-total">${fmt(total)}</span></div>
+      </div>
+      ${filas}${resto}
+    </div>`;
+}
+
+/* Los conceptos los escribe la persona, así que se escapan antes de
+   inyectarlos en el HTML de la tarjeta. */
+function escapeHtml(str){
+  return String(str||'').replace(/[&<>"']/g, c=> ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+
+function wireLibroGastos(){
+  document.querySelectorAll('[data-undo]').forEach(btn=>{
+    btn.addEventListener('click', ()=> deshacerGasto(btn.dataset.undo));
   });
 }
 
@@ -1354,8 +1576,15 @@ function openSheet(html){
   document.getElementById('sheet').innerHTML = `<div class="sheet-handle"></div>` + html;
   document.getElementById('sheetOverlay').classList.add('open');
 }
+/* Si llegó un cambio remoto mientras el panel estaba abierto, se pinta
+   ahora que la pantalla vuelve a estar libre. */
+function repintarSiQuedoPendiente(){
+  if(repintadoPendiente) setTimeout(()=>{ if(repintadoPendiente) repintarDesdeRemoto(); }, 380);
+}
+
 function closeSheet(){
   document.getElementById('sheetOverlay').classList.remove('open');
+  repintarSiQuedoPendiente();
 }
 document.getElementById('sheetOverlay').addEventListener('click', e=>{
   if(e.target.id==='sheetOverlay') closeSheet();
@@ -1378,11 +1607,81 @@ function openAlert(icon, title, message, onYes, onNo){
 }
 function closeAlert(){
   document.getElementById('alertOverlay').classList.remove('open');
+  repintarSiQuedoPendiente();
+}
+
+/* ---------- Toast (aviso breve, con deshacer opcional) ---------- */
+let toastTimer = null;
+function showToast(texto, onUndo, ms){
+  const el = document.getElementById('toast');
+  const btn = document.getElementById('toastUndo');
+  if(!el) return;
+  document.getElementById('toastText').textContent = texto;
+  btn.classList.toggle('hidden', !onUndo);
+  // Se reemplaza el boton para que no se acumulen listeners de toasts previos.
+  const nuevo = btn.cloneNode(true);
+  btn.parentNode.replaceChild(nuevo, btn);
+  if(onUndo){
+    nuevo.addEventListener('click', ()=>{ hideToast(); onUndo(); });
+  }
+  el.classList.add('open');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(hideToast, ms || 6000);
+}
+function hideToast(){
+  clearTimeout(toastTimer);
+  const el = document.getElementById('toast');
+  if(el) el.classList.remove('open');
+}
+
+/* ---------- Libro de gastos ---------- */
+/* Todo descuento de una hucha pasa por aqui, venga del sheet o del atajo
+   por URL, para que siempre quede registrado y se pueda deshacer. */
+function registrarGasto(bucketKey, importe, concepto){
+  const bucket = BUCKETS.find(b=>b.key===bucketKey);
+  if(!bucket || !(importe > 0)) return null;
+  const antes = state.huchas[bucketKey] || 0;
+  state.huchas[bucketKey] = Math.max(0, antes - importe);
+  const gasto = {
+    id: 'g' + Date.now().toString(36) + Math.random().toString(36).slice(2,7),
+    date: new Date().toISOString(),
+    bucket: bucketKey,
+    importe: importe,
+    // Si la hucha tenia menos saldo que el gasto, solo se resto hasta cero:
+    // deshacer debe devolver eso, no el importe entero.
+    descontado: antes - state.huchas[bucketKey],
+    concepto: (concepto || '').trim(),
+  };
+  if(!Array.isArray(state.gastos)) state.gastos = [];
+  state.gastos.unshift(gasto);
+  save();
+  return gasto;
+}
+
+function deshacerGasto(id){
+  if(!Array.isArray(state.gastos)) return;
+  const i = state.gastos.findIndex(g=> g.id === id);
+  if(i === -1) return;
+  const g = state.gastos[i];
+  state.huchas[g.bucket] = (state.huchas[g.bucket] || 0) + (g.descontado != null ? g.descontado : g.importe);
+  state.gastos.splice(i, 1);
+  save();
+  updateQuickStats();
+  if(activeTab === 'huchas') renderHuchas();
+  if(activeTab === 'historial') renderHistorial();
+}
+
+function avisoGastoRegistrado(g){
+  if(!g) return;
+  const bucket = BUCKETS.find(b=>b.key===g.bucket);
+  const nombre = bucket ? bucket.name : g.bucket;
+  const detalle = g.concepto ? ' · ' + g.concepto : '';
+  showToast(fmt(g.descontado) + ' de ' + nombre + detalle, ()=> deshacerGasto(g.id));
 }
 
 /* --- Gasto rápido: restar de una hucha al momento --- */
 let sheetSelectedBucket = 'ahorro';
-function renderGastoSheet(prevAmount){
+function renderGastoSheet(prevAmount, prevConcepto){
   const chips = BUCKETS.map(b=>`
     <button class="bucket-chip ${b.key===sheetSelectedBucket?'active':''}" data-bucket="${b.key}">
       <span class="dot" style="background:${b.color}"></span>${b.name}
@@ -1395,23 +1694,27 @@ function renderGastoSheet(prevAmount){
     <div class="bucket-picker">${chips}</div>
     <div class="hint" style="margin:-6px 0 12px; text-align:left;">Saldo en ${curName}: ${fmt(cur)}</div>
     <input class="sheet-amount" inputmode="decimal" id="gastoAmount" placeholder="0,00" value="${prevAmount||''}">
+    <input class="sheet-note" id="gastoConcepto" placeholder="En qué (opcional)" value="${prevConcepto||''}">
     <button class="btn danger" id="btnConfirmGasto">${ICONS.check}Descontar</button>
   `);
   document.querySelectorAll('.bucket-picker .bucket-chip').forEach(chip=>{
     chip.addEventListener('click', ()=>{
       sheetSelectedBucket = chip.dataset.bucket;
       const amt = document.getElementById('gastoAmount').value;
-      renderGastoSheet(amt);
+      const con = document.getElementById('gastoConcepto').value;
+      renderGastoSheet(amt, con);
     });
   });
   document.getElementById('btnConfirmGasto').addEventListener('click', ()=>{
     const val = parseFloat((document.getElementById('gastoAmount').value||'0').replace(',','.')) || 0;
     if(val<=0){ closeSheet(); return; }
-    state.huchas[sheetSelectedBucket] = Math.max(0, state.huchas[sheetSelectedBucket] - val);
-    save();
+    const concepto = (document.getElementById('gastoConcepto').value||'');
+    const g = registrarGasto(sheetSelectedBucket, val, concepto);
     updateQuickStats();
     if(activeTab==='huchas') renderHuchas();
+    if(activeTab==='historial') renderHistorial();
     closeSheet();
+    avisoGastoRegistrado(g);
   });
   setTimeout(()=>{ const i=document.getElementById('gastoAmount'); if(i) i.focus(); }, 380);
 }
@@ -1527,8 +1830,9 @@ function processUrlGasto(){
     const catKey = (params.get('categoria')||'').toLowerCase();
     const bucket = BUCKETS.find(b => b.key === catKey);
     if(monto > 0 && bucket){
-      state.huchas[bucket.key] = Math.max(0, state.huchas[bucket.key] - monto);
-      save();
+      const g = registrarGasto(bucket.key, monto, params.get('concepto') || '');
+      // La app todavia se esta pintando; el aviso espera a que haya UI.
+      setTimeout(()=> avisoGastoRegistrado(g), 700);
     }
     history.replaceState({}, '', location.pathname);
   }
