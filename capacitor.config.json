@@ -1,0 +1,12 @@
+{
+  "appId": "com.sergio7384.finanzas",
+  "appName": "Finanzas",
+  "webDir": "www",
+  "ios": {
+    "contentInset": "always",
+    "backgroundColor": "#08090D"
+  },
+  "server": {
+    "iosScheme": "https"
+  }
+}

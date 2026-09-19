@@ -1,0 +1,18 @@
+# Node / Capacitor
+node_modules/
+www/
+
+# iOS (generado en el runner macOS, no en Windows)
+ios/App/Pods/
+ios/App/App.xcworkspace/xcuserdata/
+ios/App/App.xcodeproj/xcuserdata/
+ios/DerivedData/
+
+# Builds descargados por ios-builder
+dist/
+
+# Material de firma: nunca en git
+*.p12
+*.mobileprovision
+ios-signing*.key
+AuthKey_*.p8
