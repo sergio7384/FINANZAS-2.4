@@ -148,6 +148,16 @@
     color:var(--text); font-size:15px; font-weight:600; padding:13px 14px; font-family:inherit; margin-bottom:14px;
   }
   .sheet-note:focus{ outline:none; border-color:var(--blue); }
+
+  /* teclado numérico del panel de importes */
+  .teclado{ display:grid; grid-template-columns:repeat(3,1fr); gap:8px; margin:0 0 14px; }
+  .tecla{
+    border:1px solid var(--glass-border-soft); background:rgba(255,255,255,0.07); color:var(--text);
+    border-radius:14px; padding:15px 0; font-size:20px; font-weight:700; font-family:inherit;
+    transition:transform 130ms var(--spring), background 160ms;
+  }
+  .tecla:active{ transform:scale(0.93); background:rgba(255,255,255,0.16); }
+  .tecla.borrar{ font-size:17px; color:var(--text-dim); }
   .sheet-group{ margin-bottom:18px; }
   .sheet-group__title{
     font-size:11px; font-weight:800; letter-spacing:0.07em; text-transform:uppercase;
@@ -193,6 +203,60 @@
   .alert-actions .btn{ margin:0; }
   .alert-cancelar{ margin-top:14px; font-size:11px; font-weight:600; color:var(--text-faint); }
   /* marca de las entradas que no son la nómina del mes */
+  /* aviso de que hay cambios sin subir */
+  .sync-badge{
+    display:none; margin-top:9px; padding:5px 11px; border-radius:100px;
+    font-size:11px; font-weight:700; color:var(--text-dim);
+    background:rgba(255,255,255,0.06); border:1px solid var(--border);
+  }
+  .sync-badge.visible{ display:inline-block; }
+  .sync-badge.alerta{ color:#FBAE3C; background:rgba(251,174,60,0.12); border-color:rgba(251,174,60,0.3); }
+
+  /* pantalla de bloqueo con Face ID */
+  .lock-screen{
+    position:fixed; inset:0; z-index:110; display:none; flex-direction:column;
+    align-items:center; justify-content:center; gap:18px; padding:32px;
+    background:var(--bg);
+  }
+  .lock-screen.open{ display:flex; }
+  .lock-icon{ color:var(--text-dim); }
+  .lock-icon svg{ width:54px; height:54px; }
+  .lock-title{ font-size:17px; font-weight:800; letter-spacing:-0.01em; }
+  .lock-err{ font-size:12.5px; color:var(--red); min-height:16px; text-align:center; max-width:280px; line-height:1.4; }
+
+  /* deslizar una fila de gasto para borrarla */
+  .gasto-swipe{ position:relative; overflow:hidden; border-radius:10px; }
+  .gasto-swipe__fondo{
+    position:absolute; inset:0; display:flex; align-items:center; justify-content:flex-end;
+    padding-right:18px; background:rgba(255,90,95,0.18); color:var(--red);
+    opacity:0; transition:opacity 180ms, background 180ms;
+  }
+  .gasto-swipe__fondo svg{ width:18px; height:18px; }
+  .gasto-swipe.armado .gasto-swipe__fondo{ opacity:1; background:rgba(255,90,95,0.32); }
+  /* La fila va opaca y del color de la tarjeta: al deslizarla tiene que
+     tapar el fondo rojo, no dejarlo translucir. */
+  .gasto-swipe .gasto-row{ position:relative; background:var(--card-solid); transition:transform 320ms var(--spring); }
+  .gasto-swipe:not(.armado) .gasto-swipe__fondo{ opacity:0.55; }
+
+  /* Te deben */
+  .deuda-total{ font-size:13px; font-weight:800; color:#F472B6; font-variant-numeric:tabular-nums; }
+  .deuda-row{ display:flex; align-items:center; gap:10px; padding:10px 0; border-bottom:1px solid var(--border); }
+  .deuda-row__main{ flex:1; min-width:0; border:0; background:transparent; font-family:inherit; text-align:left;
+    padding:2px 0; transition:opacity 180ms; }
+  .deuda-row__main:active{ opacity:0.55; }
+  .deuda-row__nombre{ font-size:14px; font-weight:700; color:var(--text); }
+  .deuda-row__amt{ font-size:14px; font-weight:800; color:#F472B6; font-variant-numeric:tabular-nums; flex-shrink:0; }
+  .deuda-edit{ display:flex; align-items:center; gap:7px; padding:9px 0; border-bottom:1px solid var(--border); }
+  .deuda-edit.nueva{ border-bottom:0; padding-top:12px; margin-top:2px; border-top:1px solid var(--border); }
+  .deuda-nombre, .deuda-importe{
+    background:rgba(255,255,255,0.06); border:1px solid var(--border); border-radius:9px; color:var(--text);
+    font-size:13.5px; font-weight:700; padding:9px 10px; font-family:inherit; min-width:0;
+  }
+  .deuda-nombre{ flex:1; }
+  .deuda-importe{ width:88px; text-align:right; flex-shrink:0; font-variant-numeric:tabular-nums; }
+  .deuda-nombre:focus, .deuda-importe:focus{ outline:none; border-color:#F472B6; }
+  .deuda-nombre::placeholder, .deuda-importe::placeholder{ color:var(--text-faint); font-weight:500; }
+
   .archivo-toggle{ margin:4px 0 14px; gap:8px; font-size:13.5px; }
   .archivo-toggle .gasto-chevron{ color:var(--text-faint); }
   .edit-punto{ display:inline-block; width:7px; height:7px; border-radius:50%; margin-right:7px; vertical-align:middle; }
@@ -529,6 +593,7 @@
     <div class="eyebrow" id="monthLabel">JULIO DE 2026</div>
     <div class="qs-title">Total utilizable</div>
     <div class="quickstats glass" id="quickStats"></div>
+    <div class="sync-badge" id="syncBadge"></div>
     <div id="streakBadge"></div>
   </header>
 
@@ -555,6 +620,18 @@
 
 <div class="sheet-overlay" id="sheetOverlay">
   <div class="sheet glass" id="sheet"></div>
+</div>
+
+<div class="lock-screen" id="lockScreen">
+  <div class="lock-icon">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6">
+      <rect x="5" y="11" width="14" height="10" rx="2.5"/><path d="M8 11V7.5a4 4 0 0 1 8 0V11"/>
+    </svg>
+  </div>
+  <div class="lock-title">Finanzas está bloqueada</div>
+  <button class="btn" id="lockBtn" style="max-width:260px;">Desbloquear</button>
+  <div class="lock-err" id="lockErr"></div>
+  <button class="auth-link" id="lockSalir" type="button">Cerrar sesión</button>
 </div>
 
 <div class="toast glass" id="toast">
@@ -588,7 +665,7 @@
    a las diez, la décima sube sola (2.49 -> 2.5). Tiene que coincidir con
    la de package.json y con la del nombre de caché de sw.js: hay un
    comprobador en scripts/check-version.mjs que lo verifica. */
-const APP_VERSION = '2.57';
+const APP_VERSION = '2.58';
 
 /* ============ ICONS ============ */
 const ICONS = {
@@ -643,6 +720,9 @@ let state = {
   /* Libro de gastos rapidos: cada descuento de una hucha queda registrado
      aqui con importe, hucha y fecha, para poder revisarlo y deshacerlo. */
   gastos: [],
+  /* Gente que te debe dinero: {id, nombre, importe}. No es dinero que
+     tengas, asi que vive aparte de las huchas y no suma a su total. */
+  teDeben: [],
 };
 
 const monthNames = ['ENERO','FEBRERO','MARZO','ABRIL','MAYO','JUNIO','JULIO','AGOSTO','SEPTIEMBRE','OCTUBRE','NOVIEMBRE','DICIEMBRE'];
@@ -871,10 +951,39 @@ function renderCuentaSheet(){
       <input type="file" id="fileImport" accept="application/json" style="display:none;">
     </div>
 
+    ${hayFaceID() ? `
+      <div class="sheet-group">
+        <div class="sheet-group__title">Seguridad</div>
+        <div class="edit-field" style="border-bottom:0;">
+          <div class="label">Pedir Face ID al abrir</div>
+          <div class="toggle2">
+            <button id="faceOff" class="${faceIDActivo()?'':'active'}">No</button>
+            <button id="faceOn" class="${faceIDActivo()?'active':''}">Sí</button>
+          </div>
+        </div>
+        <div class="hint" style="text-align:left;">Cerrojo de este dispositivo. Tus datos los sigue protegiendo tu cuenta.</div>
+        <div class="lock-err" id="faceErr" style="text-align:left;"></div>
+      </div>` : ''}
+
     <button class="btn danger" id="btnSignOut" style="margin-top:4px;">Cerrar sesión</button>
     <div class="hint" style="margin-top:12px;">Finanzas ${APP_VERSION}</div>
   `);
   wireToolbar();
+
+  const faceOn = document.getElementById('faceOn');
+  if(faceOn){
+    faceOn.addEventListener('click', async ()=>{
+      const err = document.getElementById('faceErr');
+      err.textContent = '';
+      try{ await activarFaceID(); renderCuentaSheet(); }
+      catch(e){ err.textContent = 'No se ha podido activar (' + ((e && e.name) || 'error') + ').'; }
+    });
+    document.getElementById('faceOff').addEventListener('click', ()=>{
+      desactivarFaceID();
+      renderCuentaSheet();
+    });
+  }
+
   document.getElementById('btnSignOut').addEventListener('click', ()=>{
     closeSheet();
     openAlert('👋', 'Cerrar sesión',
@@ -932,6 +1041,7 @@ function save(){
   try{ if(window.localStorage) localStorage.setItem(claveLocal(), JSON.stringify(state)); }catch(e){}
   if(!(window.storage && window.storage.set)) return;
   savePendiente = true;
+  if(syncEstado !== 'sin-conexion') marcarSync('pendiente');
   clearTimeout(saveTimer);
   // Arrastrar un slider llama a save() en cada píxel; agrupando las
   // escrituras se manda una sola a Firestore en vez de cientos.
@@ -942,11 +1052,13 @@ function flushSave(){
   clearTimeout(saveTimer);
   if(!savePendiente || !(window.storage && window.storage.set)) return;
   savePendiente = false;
-  window.storage.set('finanzas-state', JSON.stringify(state)).catch(()=>{
-    // Se deja marcado para que el siguiente save() lo reintente.
-    savePendiente = true;
-    if(typeof showToast === 'function') showToast('Sin conexión: guardado solo en este dispositivo', null, 4000);
-  });
+  window.storage.set('finanzas-state', JSON.stringify(state))
+    .then(()=> marcarSync('ok'))
+    .catch(()=>{
+      // Se deja marcado para que el siguiente save() lo reintente.
+      savePendiente = true;
+      marcarSync('sin-conexion');
+    });
 }
 
 // Al cerrar o mandar la app a segundo plano se vuelca lo que quede pendiente.
@@ -963,6 +1075,7 @@ function mergeState(loaded){
   merged.metas = { ...state.metas, ...(loaded.metas||{}) };
   merged.historial = loaded.historial || state.historial;
   merged.gastos = loaded.gastos || state.gastos;
+  merged.teDeben = loaded.teDeben || state.teDeben;
   return merged;
 }
 async function load(){
@@ -1325,7 +1438,8 @@ function renderIngresoExtraSheet(){
   openSheet(`
     <h2>💰 Ingreso extra</h2>
     <div class="hint" style="text-align:left; margin:-8px 0 14px;">Se reparte como una nómina: se le restan las deducciones y se aplica tu distribución actual.</div>
-    <input class="sheet-amount" inputmode="decimal" id="extraAmount" placeholder="0,00">
+    <input class="sheet-amount" id="extraAmount" placeholder="0,00" readonly>
+    ${tecladoHTML()}
     <input class="sheet-note" id="extraConcepto" placeholder="De qué es (opcional)">
     <div class="highlight" style="margin:0 0 14px;">
       <div class="label">Se repartirán</div>
@@ -1339,6 +1453,7 @@ function renderIngresoExtraSheet(){
     document.getElementById('extraNeto').textContent = fmt(netoDe(base));
   };
   campo.addEventListener('input', pintarNeto);
+  wireTeclado(campo);
   document.getElementById('btnConfirmExtra').addEventListener('click', ()=>{
     const base = parseFloat((campo.value||'0').replace(',','.')) || 0;
     if(base <= 0){ closeSheet(); return; }
@@ -1346,7 +1461,6 @@ function renderIngresoExtraSheet(){
     closeSheet();
     aplicarNomina({ base, tipo:'extra', concepto });
   });
-  setTimeout(()=> campo.focus(), 380);
 }
 
 function aplicarNomina(opciones){
@@ -1405,6 +1519,96 @@ function aplicarNomina(opciones){
       'Antes de seguir, ¿quieres cribar lo que te ha sobrado del mes anterior entre Ahorro, Coche y Caprichos?',
       ()=> renderCribaSheet());
   }, 1000);
+}
+
+/* ============ RENDER: TE DEBEN ============ */
+/* Va en Huchas pero no es una hucha: es dinero que no tienes todavía, así
+   que no suma al total de arriba y lleva su cuenta aparte. */
+let teDebenAbierto = false;
+let teDebenEditando = null;
+
+function filaDeuda(d){
+  const editando = teDebenEditando === d.id;
+  if(editando) return `
+    <div class="deuda-edit" data-deuda="${d.id}">
+      <input class="deuda-nombre" data-df="nombre" value="${escapeHtml(d.nombre)}" placeholder="Nombre">
+      <input class="deuda-importe" data-df="importe" inputmode="decimal" value="${d.importe}" placeholder="0,00">
+      <button class="icon-btn edit on" data-guardar-deuda="${d.id}" aria-label="Guardar">${ICONS.check}</button>
+      <button class="icon-btn del" data-borrar-deuda="${d.id}" aria-label="Quitar">${ICONS.trash}</button>
+    </div>`;
+  return `
+    <div class="deuda-row">
+      <button type="button" class="deuda-row__main" data-editar-deuda="${d.id}" aria-label="Editar">
+        <span class="deuda-row__nombre">${escapeHtml(d.nombre)}</span>
+      </button>
+      <span class="deuda-row__amt">${fmt(d.importe)}</span>
+    </div>`;
+}
+
+function renderTeDeben(){
+  const lista = state.teDeben || [];
+  const total = totalTeDeben();
+  const cuerpo = teDebenAbierto ? `
+    ${lista.length ? lista.map(filaDeuda).join('') : `<div class="hint" style="text-align:left; padding:6px 0 2px;">Nadie te debe nada ahora mismo.</div>`}
+    <div class="deuda-edit nueva">
+      <input class="deuda-nombre" id="deudaNombre" placeholder="Nombre">
+      <input class="deuda-importe" id="deudaImporte" inputmode="decimal" placeholder="0,00">
+      <button class="icon-btn edit" id="deudaAnadir" aria-label="Añadir">${ICONS.check}</button>
+    </div>` : '';
+
+  return `
+    <div class="card">
+      <button type="button" class="card-head gasto-head" id="teDebenToggle" aria-expanded="${teDebenAbierto}">
+        <div class="icon" style="background:#F472B6">${ICONS.heart}</div>
+        <span>Te deben${lista.length ? `<span class="gasto-periodo">${lista.length} ${lista.length===1?'persona':'personas'}</span>` : ''}</span>
+        <div class="card-actions">
+          <span class="deuda-total">${fmt(total)}</span>
+          <span class="gasto-chevron ${teDebenAbierto?'abierto':''}">${ICONS.chevron}</span>
+        </div>
+      </button>
+      ${cuerpo}
+    </div>`;
+}
+
+function wireTeDeben(){
+  const toggle = document.getElementById('teDebenToggle');
+  if(toggle) toggle.addEventListener('click', ()=>{
+    teDebenAbierto = !teDebenAbierto;
+    teDebenEditando = null;
+    renderHuchas();
+  });
+
+  const leer = (cont, campo)=> cont.querySelector(`[data-df="${campo}"]`).value;
+
+  document.querySelectorAll('[data-editar-deuda]').forEach(b=>{
+    b.addEventListener('click', ()=>{ teDebenEditando = b.dataset.editarDeuda; renderHuchas(); });
+  });
+  document.querySelectorAll('[data-guardar-deuda]').forEach(b=>{
+    b.addEventListener('click', ()=>{
+      const cont = document.querySelector(`.deuda-edit[data-deuda="${b.dataset.guardarDeuda}"]`);
+      editarDeuda(b.dataset.guardarDeuda, leer(cont,'nombre'),
+                  parseFloat((leer(cont,'importe')||'0').replace(',','.')) || 0);
+      teDebenEditando = null;
+      renderHuchas();
+    });
+  });
+  document.querySelectorAll('[data-borrar-deuda]').forEach(b=>{
+    b.addEventListener('click', ()=>{
+      borrarDeuda(b.dataset.borrarDeuda);
+      teDebenEditando = null;
+      renderHuchas();
+    });
+  });
+
+  const anadir = document.getElementById('deudaAnadir');
+  if(anadir) anadir.addEventListener('click', ()=>{
+    const nombre = document.getElementById('deudaNombre').value;
+    const importe = parseFloat((document.getElementById('deudaImporte').value||'0').replace(',','.')) || 0;
+    if(!anadirDeuda(nombre, importe)) return;
+    renderHuchas();
+    // El panel queda abierto y con el foco listo para meter a otra persona.
+    setTimeout(()=>{ const i = document.getElementById('deudaNombre'); if(i) i.focus(); }, 60);
+  });
 }
 
 /* ============ RENDER: HUCHAS ============ */
@@ -1472,7 +1676,7 @@ function renderHuchas(){
     </div>
   `;
 
-  el.innerHTML = cabecera + MIS_BUCKETS.map(b=>{
+  el.innerHTML = cabecera + renderTeDeben() + MIS_BUCKETS.map(b=>{
     const cur = state.huchas[b.key];
     const meta = state.metas[b.key] || 0;
     const editing = editingBucket === b.key;
@@ -1530,6 +1734,8 @@ function renderHuchas(){
       celebratedGoals.delete(b.key);
     }
   });
+
+  wireTeDeben();
 
   el.querySelectorAll('[data-edit]').forEach(btn=>{
     btn.addEventListener('click', ()=>{
@@ -1706,6 +1912,8 @@ function filaGasto(g){
   // El cuerpo de la fila abre la edición; repetir queda como botón aparte
   // porque crea un gasto nuevo y no conviene que salga sin querer.
   return `
+    <div class="gasto-swipe" data-swipe="${g.id}">
+      <div class="gasto-swipe__fondo">${ICONS.trash}</div>
     <div class="gasto-row">
       <span class="gasto-row__dot" style="background:${b ? b.color : '#888'}"></span>
       <button type="button" class="gasto-row__main" data-editar="${g.id}" aria-label="Editar gasto">
@@ -1714,6 +1922,7 @@ function filaGasto(g){
       </button>
       <div class="gasto-row__amount">−${fmt(importeGasto(g))}</div>
       <button class="icon-btn" data-repetir="${g.id}" aria-label="Repetir gasto">${ICONS.repeat}</button>
+    </div>
     </div>`;
 }
 
@@ -1774,6 +1983,50 @@ function escapeHtml(str){
   return String(str||'').replace(/[&<>"']/g, c=> ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 }
 
+/* Deslizar una fila hacia la izquierda la borra. El gesto de cambiar de
+   pestaña también vive en esta vista, así que aquí se marca el toque como
+   propio para que aquel lo ignore (ver tIgnore más abajo). */
+const SWIPE_BORRAR = 96;
+function wireSwipeGastos(){
+  document.querySelectorAll('[data-swipe]').forEach(cont=>{
+    const fila = cont.querySelector('.gasto-row');
+    let x0 = null, y0 = null, activo = false;
+
+    cont.addEventListener('touchstart', e=>{
+      x0 = e.touches[0].clientX; y0 = e.touches[0].clientY; activo = false;
+      fila.style.transition = 'none';
+    }, {passive:true});
+
+    cont.addEventListener('touchmove', e=>{
+      if(x0 === null) return;
+      const dx = e.touches[0].clientX - x0;
+      const dy = e.touches[0].clientY - y0;
+      // Solo cuenta como borrado si es claramente horizontal y hacia la
+      // izquierda; si no, se deja pasar para poder hacer scroll.
+      if(!activo && Math.abs(dx) > 10 && Math.abs(dx) > Math.abs(dy) * 1.5) activo = true;
+      if(!activo || dx > 0) return;
+      const d = Math.max(dx, -140);
+      fila.style.transform = `translateX(${d}px)`;
+      cont.classList.toggle('armado', d <= -SWIPE_BORRAR);
+    }, {passive:true});
+
+    cont.addEventListener('touchend', e=>{
+      if(x0 === null) return;
+      const dx = e.changedTouches[0].clientX - x0;
+      fila.style.transition = '';
+      x0 = null;
+      if(activo && dx <= -SWIPE_BORRAR){
+        fila.style.transform = 'translateX(-100%)';
+        // deshacerGasto ya devuelve el dinero a su hucha y repinta.
+        setTimeout(()=> deshacerGasto(cont.dataset.swipe), 180);
+      } else {
+        fila.style.transform = '';
+        cont.classList.remove('armado');
+      }
+    }, {passive:true});
+  });
+}
+
 function wireLibroGastos(){
   document.querySelectorAll('[data-editar]').forEach(btn=>{
     btn.addEventListener('click', ()=>{
@@ -1795,6 +2048,7 @@ function wireLibroGastos(){
       renderHistorial();
     });
   }
+  wireSwipeGastos();
 }
 
 function wireToolbar(){
@@ -2064,6 +2318,99 @@ function repetirGasto(id){
   return registrarGasto(g.bucket, g.importe, g.concepto);
 }
 
+/* ---------- Bloqueo con Face ID ----------
+   Usa WebAuthn con el autenticador del propio aparato. Es un cerrojo LOCAL:
+   impide que alguien que coja el móvil desbloqueado abra la app, pero no
+   cifra nada ni sustituye a la sesión de Firebase, que es lo que de verdad
+   protege los datos. La credencial se guarda por dispositivo, no en la nube:
+   activarlo en el móvil no bloquea el portátil. */
+const CLAVE_FACEID = 'finanzas-faceid';
+
+function hayFaceID(){
+  return !!(window.PublicKeyCredential && navigator.credentials && location.protocol === 'https:');
+}
+function faceIDActivo(){
+  try{ return !!localStorage.getItem(CLAVE_FACEID); }catch(e){ return false; }
+}
+
+const aBytes = s => Uint8Array.from(atob(s), c=> c.charCodeAt(0));
+const aTexto = b => btoa(String.fromCharCode(...new Uint8Array(b)));
+const reto = ()=> crypto.getRandomValues(new Uint8Array(32));
+
+async function activarFaceID(){
+  const cred = await navigator.credentials.create({ publicKey:{
+    challenge: reto(),
+    rp: { name:'Finanzas' },
+    user: { id: reto().slice(0,16), name: (currentUser && currentUser.email) || 'finanzas', displayName:'Finanzas' },
+    pubKeyCredParams: [{type:'public-key', alg:-7}, {type:'public-key', alg:-257}],
+    authenticatorSelection: { authenticatorAttachment:'platform', userVerification:'required' },
+    timeout: 60000,
+  }});
+  if(!cred) throw new Error('sin credencial');
+  localStorage.setItem(CLAVE_FACEID, aTexto(cred.rawId));
+}
+
+function desactivarFaceID(){
+  try{ localStorage.removeItem(CLAVE_FACEID); }catch(e){}
+}
+
+async function pedirFaceID(){
+  const id = localStorage.getItem(CLAVE_FACEID);
+  if(!id) return true;
+  const cred = await navigator.credentials.get({ publicKey:{
+    challenge: reto(),
+    allowCredentials: [{ type:'public-key', id: aBytes(id) }],
+    userVerification: 'required',
+    timeout: 60000,
+  }});
+  return !!cred;
+}
+
+/* ---------- Estado de guardado ----------
+   Un gasto apuntado sin cobertura se queda solo en este aparato. Antes no
+   había manera de saberlo; ahora la cabecera lo dice hasta que sube. */
+let syncEstado = 'ok';   // 'ok' | 'pendiente' | 'sin-conexion'
+function marcarSync(estado){
+  syncEstado = estado;
+  const el = document.getElementById('syncBadge');
+  if(!el) return;
+  const textos = { ok:'', pendiente:'Guardando…', 'sin-conexion':'Sin conexión · cambios sin subir' };
+  el.textContent = textos[estado] || '';
+  el.classList.toggle('visible', estado !== 'ok');
+  el.classList.toggle('alerta', estado === 'sin-conexion');
+}
+window.addEventListener('online', ()=>{ if(syncEstado === 'sin-conexion') flushSave(); });
+window.addEventListener('offline', ()=> marcarSync('sin-conexion'));
+
+/* ---------- Te deben ---------- */
+function totalTeDeben(){
+  return (state.teDeben || []).reduce((s,d)=> s + (parseFloat(d.importe) || 0), 0);
+}
+function anadirDeuda(nombre, importe){
+  if(!nombre.trim() || !(importe > 0)) return null;
+  if(!Array.isArray(state.teDeben)) state.teDeben = [];
+  const d = { id:'d' + Date.now().toString(36) + Math.random().toString(36).slice(2,6),
+              nombre:nombre.trim(), importe, date:new Date().toISOString() };
+  state.teDeben.push(d);
+  save();
+  return d;
+}
+function editarDeuda(id, nombre, importe){
+  const d = (state.teDeben || []).find(x=> x.id === id);
+  if(!d || !nombre.trim() || !(importe > 0)) return null;
+  d.nombre = nombre.trim();
+  d.importe = importe;
+  save();
+  return d;
+}
+function borrarDeuda(id){
+  if(!Array.isArray(state.teDeben)) return;
+  const i = state.teDeben.findIndex(x=> x.id === id);
+  if(i === -1) return;
+  state.teDeben.splice(i, 1);
+  save();
+}
+
 /* ---------- Lo que sueles gastar en cada hucha ---------- */
 /* Media mensual real, sacada del libro. El mes en curso va a medias (aún no
    ha terminado), así que se deja fuera mientras haya meses completos con los
@@ -2103,6 +2450,44 @@ function avisoGastoRegistrado(g){
   showToast(fmt(g.descontado) + ' de ' + nombre + detalle, ()=> deshacerGasto(g.id));
 }
 
+/* ---------- Teclado numérico propio ----------
+   inputmode="decimal" en iOS sigue sacando un teclado con letras y una
+   coma escondida. Para meter importes deprisa va mejor un teclado propio:
+   el campo se marca readonly para que el sistema no saque el suyo. */
+const TECLAS = ['1','2','3','4','5','6','7','8','9',',','0','⌫'];
+
+function tecladoHTML(){
+  return `<div class="teclado">` + TECLAS.map(t=>
+    `<button type="button" class="tecla${t==='⌫'?' borrar':''}" data-tecla="${t}">${t}</button>`
+  ).join('') + `</div>`;
+}
+
+/* Devuelve lo que quedaría en el campo tras pulsar una tecla, sin tocar el
+   DOM: así se puede probar la lógica sin navegador. */
+function aplicarTecla(valor, tecla){
+  const v = valor || '';
+  if(tecla === '⌫') return v.slice(0, -1);
+  if(tecla === ','){
+    if(v.includes(',')) return v;           // una coma como mucho
+    return (v === '' ? '0' : v) + ',';
+  }
+  // Como mucho dos decimales, que es lo que se muestra.
+  const coma = v.indexOf(',');
+  if(coma !== -1 && v.length - coma > 2) return v;
+  if(v === '0') return tecla;               // no dejar 0 a la izquierda
+  return v + tecla;
+}
+
+function wireTeclado(input){
+  if(!input) return;
+  document.querySelectorAll('[data-tecla]').forEach(b=>{
+    b.addEventListener('click', ()=>{
+      input.value = aplicarTecla(input.value, b.dataset.tecla);
+      input.dispatchEvent(new Event('input', {bubbles:true}));
+    });
+  });
+}
+
 /* --- Gasto rápido: el mismo panel sirve para crear y para editar --- */
 /* Se guarda en una variable en vez de leerlo del DOM porque el panel se
    repinta entero al cambiar de hucha, y si no se perderían los campos. */
@@ -2136,7 +2521,8 @@ function renderGastoSheet(){
     <h2>${editando ? '✏️ Editar gasto' : '💸 Gasto rápido'}</h2>
     <div class="bucket-picker">${chips}</div>
     <div class="hint" style="margin:-6px 0 12px; text-align:left;">Saldo en ${bucket.name}: ${fmt(saldo)}${suele}</div>
-    <input class="sheet-amount" inputmode="decimal" id="gastoAmount" placeholder="0,00" value="${sheetGasto.importe}">
+    <input class="sheet-amount" id="gastoAmount" placeholder="0,00" value="${sheetGasto.importe}" readonly>
+    ${tecladoHTML()}
     <input class="sheet-note" id="gastoConcepto" placeholder="En qué (opcional)" value="${escapeHtml(sheetGasto.concepto)}">
     <button class="btn ${editando ? '' : 'danger'}" id="btnConfirmGasto">${ICONS.check}${editando ? 'Guardar cambios' : 'Descontar'}</button>
     ${editando ? `<button class="btn ghost" id="btnBorrarGasto" style="margin-top:10px;">${ICONS.trash}Eliminar gasto</button>` : ''}
@@ -2178,7 +2564,7 @@ function renderGastoSheet(){
     });
   }
 
-  if(!editando) setTimeout(()=>{ const i=document.getElementById('gastoAmount'); if(i) i.focus(); }, 380);
+  wireTeclado(document.getElementById('gastoAmount'));
 }
 
 /* Un gasto cambia saldos y libro a la vez, así que todo lo que los enseña
@@ -2367,7 +2753,7 @@ let tStartX = null, tStartY = null, tIgnore = false, tDecided = null;
 
 viewsEl.addEventListener('touchstart', e=>{
   const t = e.target;
-  tIgnore = !!(t.closest && t.closest('input, button, .toggle2, .chip, .icon-btn, a'));
+  tIgnore = !!(t.closest && t.closest('input, button, .toggle2, .chip, .icon-btn, a, .gasto-swipe'));
   tStartX = e.touches[0].clientX;
   tStartY = e.touches[0].clientY;
   tDecided = null;
@@ -2417,7 +2803,41 @@ function processUrlGasto(){
 /* ============ INIT ============
    Ya no se llama sola al cargar el script: la dispara onAuthStateChanged
    (más arriba) en cuanto hay sesión, la primera vez que la hay. */
+/* Se pide antes de pintar nada: si falla o se cancela, la app no llega a
+   verse. Cerrar sesión sigue disponible para no quedarse encerrado, por
+   ejemplo si el aparato pierde la huella registrada. */
+function pedirDesbloqueo(){
+  return new Promise(resolve=>{
+    if(!faceIDActivo() || !hayFaceID()){ resolve(); return; }
+    const pantalla = document.getElementById('lockScreen');
+    const err = document.getElementById('lockErr');
+    pantalla.classList.add('open');
+
+    const intentar = async ()=>{
+      err.textContent = '';
+      try{
+        if(await pedirFaceID()){
+          pantalla.classList.remove('open');
+          resolve();
+        }
+      }catch(e){
+        err.textContent = e && e.name === 'NotAllowedError'
+          ? 'No se ha podido comprobar. Inténtalo otra vez.'
+          : 'Este dispositivo no ha podido desbloquear (' + ((e && e.name) || 'error') + ').';
+      }
+    };
+    document.getElementById('lockBtn').addEventListener('click', intentar);
+    document.getElementById('lockSalir').addEventListener('click', ()=>{
+      desactivarFaceID();
+      auth.signOut();
+      pantalla.classList.remove('open');
+    });
+    intentar();
+  });
+}
+
 async function iniciarApp(){
+  await pedirDesbloqueo();
   await load();
   processUrlGasto();
   updateQuickStats();
